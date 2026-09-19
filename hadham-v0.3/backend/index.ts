@@ -563,6 +563,16 @@ export const handler = router({
         return error('المستند غير موجود', 404);
       const path = doc.status === 'completed' ? doc.finalPath : doc.workingPath;
       const [signed] = await storage.url([path]);
+      let pageCount = 1;
+      const [storedPdf] = await storage.read([path]);
+      if (storedPdf?.content) {
+        try {
+          const pdf = await PDFDocument.load(Buffer.from(storedPdf.content, 'base64'));
+          pageCount = Math.max(1, pdf.getPageCount());
+        } catch {
+          pageCount = 1;
+        }
+      }
       const nextSigner = doc.signers
         .filter(s => s.status === 'pending')
         .sort((a, b) => a.order - b.order)[0];
@@ -570,6 +580,7 @@ export const handler = router({
         document: doc,
         fileUrl: signed?.url || '',
         nextSignerEmail: nextSigner?.email || null,
+        pageCount,
       });
     },
   ],
@@ -616,8 +627,25 @@ export const handler = router({
       if (norm(next.email) !== norm(profile.email))
         return error('الدور الحالي لموقّع آخر', 409);
 
-      const body = ctx.body as { signatureDataUrl?: string };
+      const body = ctx.body as {
+        signatureDataUrl?: string;
+        pageNumber?: number;
+        position?:
+          | 'top-right'
+          | 'top-center'
+          | 'top-left'
+          | 'middle-right'
+          | 'middle-center'
+          | 'middle-left'
+          | 'bottom-right'
+          | 'bottom-center'
+          | 'bottom-left';
+        width?: number;
+        color?: string;
+        source?: 'draw' | 'image';
+      };
       let nextPdf = '';
+      let signatureAudit = '';
       const [working] = await storage.read([doc.workingPath]);
       if (!working?.content) return error('تعذر قراءة نسخة العمل', 500);
       nextPdf = working.content;
@@ -625,19 +653,78 @@ export const handler = router({
       if (next.action === 'sign') {
         const dataUrl = body.signatureDataUrl || '';
         const marker = 'data:image/png;base64,';
-        if (!dataUrl.startsWith(marker)) return error('ارسم توقيعك أولًا', 400);
+        if (!dataUrl.startsWith(marker))
+          return error('ارسم توقيعك أو ارفع صورة التوقيع أولًا', 400);
         const signatureBase64 = dataUrl.slice(marker.length);
+        if (signatureBase64.length > 2_500_000)
+          return error('صورة التوقيع أكبر من الحد المسموح', 413);
+
         const pdf = await PDFDocument.load(
           Buffer.from(working.content, 'base64')
         );
         const png = await pdf.embedPng(Buffer.from(signatureBase64, 'base64'));
         const pages = pdf.getPages();
-        const page = pages[pages.length - 1];
-        const width = Math.min(150, page.getWidth() * 0.28);
-        const scaled = png.scale(width / png.width);
-        const x = Math.max(28, page.getWidth() - scaled.width - 34);
+        const requestedPage = Number(body.pageNumber ?? pages.length);
+        if (
+          !Number.isInteger(requestedPage) ||
+          requestedPage < 1 ||
+          requestedPage > pages.length
+        ) {
+          return error('رقم صفحة التوقيع غير صحيح', 400);
+        }
+
+        const allowedPositions = new Set([
+          'top-right',
+          'top-center',
+          'top-left',
+          'middle-right',
+          'middle-center',
+          'middle-left',
+          'bottom-right',
+          'bottom-center',
+          'bottom-left',
+        ]);
+        const position = body.position || 'bottom-right';
+        if (!allowedPositions.has(position))
+          return error('موضع التوقيع غير صحيح', 400);
+
+        const page = pages[requestedPage - 1];
+        const margin = 24;
+        const maxWidth = Math.min(240, page.getWidth() - margin * 2);
+        const requestedWidth = Number(body.width ?? 140);
+        if (!Number.isFinite(requestedWidth))
+          return error('حجم التوقيع غير صحيح', 400);
+        const width = Math.max(70, Math.min(maxWidth, requestedWidth));
+        let scaled = png.scale(width / png.width);
+        if (scaled.height > page.getHeight() - margin * 2) {
+          const heightScale = (page.getHeight() - margin * 2) / png.height;
+          scaled = png.scale(heightScale);
+        }
+
+        const horizontal = position.endsWith('right')
+          ? 'right'
+          : position.endsWith('left')
+            ? 'left'
+            : 'center';
+        const vertical = position.startsWith('top')
+          ? 'top'
+          : position.startsWith('bottom')
+            ? 'bottom'
+            : 'middle';
+
+        const x =
+          horizontal === 'right'
+            ? page.getWidth() - scaled.width - margin
+            : horizontal === 'left'
+              ? margin
+              : (page.getWidth() - scaled.width) / 2;
         const y =
-          28 + ((next.order - 1) % 4) * Math.min(78, scaled.height + 18);
+          vertical === 'top'
+            ? page.getHeight() - scaled.height - margin
+            : vertical === 'bottom'
+              ? margin
+              : (page.getHeight() - scaled.height) / 2;
+
         page.drawImage(png, {
           x,
           y,
@@ -645,6 +732,19 @@ export const handler = router({
           height: scaled.height,
         });
         nextPdf = await pdf.saveAsBase64({ dataUri: false });
+
+        const positionLabels: Record<string, string> = {
+          'top-right': 'أعلى يمين',
+          'top-center': 'أعلى وسط',
+          'top-left': 'أعلى يسار',
+          'middle-right': 'وسط يمين',
+          'middle-center': 'وسط الصفحة',
+          'middle-left': 'وسط يسار',
+          'bottom-right': 'أسفل يمين',
+          'bottom-center': 'أسفل وسط',
+          'bottom-left': 'أسفل يسار',
+        };
+        signatureAudit = ` — الصفحة ${requestedPage}، الموضع ${positionLabels[position]}، الحجم ${Math.round(width)}، المصدر ${body.source === 'image' ? 'صورة مرفوعة' : 'رسم مباشر'}، اللون ${body.color || '#111827'}`;
       }
 
       doc.signers = doc.signers.map(s =>
@@ -702,9 +802,9 @@ export const handler = router({
         doc.orgId,
         profile.email,
         event,
-        completed
+        (completed
           ? 'تم الإجراء واكتملت المعاملة'
-          : 'تم الإجراء وانتقلت المعاملة للطرف التالي'
+          : 'تم الإجراء وانتقلت المعاملة للطرف التالي') + signatureAudit
       );
       return json({ ok: true, completed, document: doc });
     },
