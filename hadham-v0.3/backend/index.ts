@@ -238,6 +238,105 @@ async function canAccess(profile: Profile, doc: DocumentRecord) {
   return doc.signers.some(s => norm(s.email) === norm(profile.email));
 }
 
+type SignatureRequest = {
+  signatureDataUrl?: string;
+  pageNumber?: number;
+  width?: number;
+  color?: string;
+  source?: 'draw' | 'image';
+  xRatio?: number;
+  yRatio?: number;
+};
+
+async function stampSignature(
+  pdfBase64: string,
+  body: SignatureRequest
+): Promise<{ pdfBase64: string; auditDetail: string }> {
+  const dataUrl = body.signatureDataUrl || '';
+  const marker = 'data:image/png;base64,';
+  if (!dataUrl.startsWith(marker))
+    throw new Error('SIGNATURE_MISSING');
+
+  const signatureBase64 = dataUrl.slice(marker.length);
+  if (signatureBase64.length > 2_500_000)
+    throw new Error('SIGNATURE_TOO_LARGE');
+
+  const pdf = await PDFDocument.load(Buffer.from(pdfBase64, 'base64'));
+  const png = await pdf.embedPng(
+    Buffer.from(signatureBase64, 'base64')
+  );
+  const pages = pdf.getPages();
+  const requestedPage = Number(body.pageNumber ?? pages.length);
+  if (
+    !Number.isInteger(requestedPage) ||
+    requestedPage < 1 ||
+    requestedPage > pages.length
+  ) {
+    throw new Error('INVALID_PAGE');
+  }
+
+  const page = pages[requestedPage - 1];
+  const margin = 16;
+  const maxWidth = Math.min(260, page.getWidth() - margin * 2);
+  const requestedWidth = Number(body.width ?? 140);
+  if (!Number.isFinite(requestedWidth))
+    throw new Error('INVALID_SIZE');
+
+  const width = Math.max(70, Math.min(maxWidth, requestedWidth));
+  let scaled = png.scale(width / png.width);
+  if (scaled.height > page.getHeight() - margin * 2) {
+    const heightScale =
+      (page.getHeight() - margin * 2) / png.height;
+    scaled = png.scale(heightScale);
+  }
+
+  const xRatio = Math.max(
+    0,
+    Math.min(1, Number(body.xRatio ?? 0.72))
+  );
+  const yRatio = Math.max(
+    0,
+    Math.min(1, Number(body.yRatio ?? 0.82))
+  );
+  const availableX = Math.max(
+    0,
+    page.getWidth() - scaled.width
+  );
+  const availableY = Math.max(
+    0,
+    page.getHeight() - scaled.height
+  );
+  const x = xRatio * availableX;
+  const y = (1 - yRatio) * availableY;
+
+  page.drawImage(png, {
+    x,
+    y,
+    width: scaled.width,
+    height: scaled.height,
+  });
+
+  const output = await pdf.saveAsBase64({ dataUri: false });
+  const horizontalPercent = Math.round(xRatio * 100);
+  const verticalPercent = Math.round(yRatio * 100);
+  const auditDetail =
+    ` — الصفحة ${requestedPage}، الموضع الحر (${horizontalPercent}% أفقي، ${verticalPercent}% رأسي)، الحجم ${Math.round(width)}، المصدر ${body.source === 'image' ? 'صورة مرفوعة' : 'رسم مباشر'}، اللون ${body.color || '#111827'}`;
+
+  return { pdfBase64: output, auditDetail };
+}
+
+function signatureErrorResponse(message: string) {
+  if (message === 'SIGNATURE_MISSING')
+    return error('ارسم توقيعك أو ارفع صورة التوقيع أولًا', 400);
+  if (message === 'SIGNATURE_TOO_LARGE')
+    return error('صورة التوقيع أكبر من الحد المسموح', 413);
+  if (message === 'INVALID_PAGE')
+    return error('رقم صفحة التوقيع غير صحيح', 400);
+  if (message === 'INVALID_SIZE')
+    return error('حجم التوقيع غير صحيح', 400);
+  return error('تعذر تجهيز التوقيع', 400);
+}
+
 export const handler = router({
   'GET /api/_healthcheck': [async () => json({ ok: true, service: 'hadham' })],
 
@@ -561,16 +660,26 @@ export const handler = router({
       const doc = await singleton<DocumentRecord>(`doc:${ctx.params.id}`);
       if (!doc || !(await canAccess(profile, doc)))
         return error('المستند غير موجود', 404);
-      const path = doc.status === 'completed' ? doc.finalPath : doc.workingPath;
+      const path =
+        doc.status === 'completed' ? doc.finalPath : doc.workingPath;
       const [signed] = await storage.url([path]);
       let pageCount = 1;
+      let pageSizes: Array<{ width: number; height: number }> = [];
       const [storedPdf] = await storage.read([path]);
       if (storedPdf?.content) {
         try {
-          const pdf = await PDFDocument.load(Buffer.from(storedPdf.content, 'base64'));
-          pageCount = Math.max(1, pdf.getPageCount());
+          const pdf = await PDFDocument.load(
+            Buffer.from(storedPdf.content, 'base64')
+          );
+          const pages = pdf.getPages();
+          pageCount = Math.max(1, pages.length);
+          pageSizes = pages.map(page => ({
+            width: page.getWidth(),
+            height: page.getHeight(),
+          }));
         } catch {
           pageCount = 1;
+          pageSizes = [{ width: 595, height: 842 }];
         }
       }
       const nextSigner = doc.signers
@@ -581,6 +690,7 @@ export const handler = router({
         fileUrl: signed?.url || '',
         nextSignerEmail: nextSigner?.email || null,
         pageCount,
+        pageSizes,
       });
     },
   ],
@@ -606,6 +716,65 @@ export const handler = router({
     },
   ],
 
+  'POST /api/documents/:id/preview-signature': [
+    requireAuth(),
+    async ctx => {
+      const profile = await resolveProfile(
+        ctx.user!.userId,
+        ctx.user!.email,
+        ctx.user!.name
+      );
+      if (!profile) return error('غير مصرح', 403);
+      const doc = await singleton<DocumentRecord>(
+        `doc:${ctx.params.id}`
+      );
+      if (!doc || !(await canAccess(profile, doc)))
+        return error('المستند غير موجود', 404);
+
+      const pending = doc.signers
+        .filter(s => s.status === 'pending')
+        .sort((a, b) => a.order - b.order);
+      const next = pending[0];
+      if (!next || norm(next.email) !== norm(profile.email))
+        return error('ليس دورك الحالي للتوقيع', 409);
+      if (next.action !== 'sign')
+        return error('المعاينة متاحة للتوقيع فقط', 400);
+
+      const [working] = await storage.read([doc.workingPath]);
+      if (!working?.content)
+        return error('تعذر قراءة نسخة العمل', 500);
+
+      try {
+        const stamped = await stampSignature(
+          working.content,
+          ctx.body as SignatureRequest
+        );
+        const previewPath =
+          `documents/${doc.orgId}/${doc.docId}/preview-${hash(profile.userId).slice(0, 12)}.pdf`;
+        const [ok] = await storage.write([
+          {
+            path: previewPath,
+            content: stamped.pdfBase64,
+            contentType: 'application/pdf',
+          },
+        ]);
+        if (!ok)
+          return error('تعذر إنشاء نسخة المعاينة', 500);
+        const [signed] = await storage.url([previewPath]);
+        return json({
+          ok: true,
+          previewUrl: signed?.url || '',
+        });
+      } catch (errValue) {
+        return signatureErrorResponse(
+          errValue instanceof Error
+            ? errValue.message
+            : 'UNKNOWN'
+        );
+      }
+    },
+  ],
+
   'POST /api/documents/:id/act': [
     requireAuth(),
     async ctx => {
@@ -627,124 +796,29 @@ export const handler = router({
       if (norm(next.email) !== norm(profile.email))
         return error('الدور الحالي لموقّع آخر', 409);
 
-      const body = ctx.body as {
-        signatureDataUrl?: string;
-        pageNumber?: number;
-        position?:
-          | 'top-right'
-          | 'top-center'
-          | 'top-left'
-          | 'middle-right'
-          | 'middle-center'
-          | 'middle-left'
-          | 'bottom-right'
-          | 'bottom-center'
-          | 'bottom-left';
-        width?: number;
-        color?: string;
-        source?: 'draw' | 'image';
-      };
+      const body = ctx.body as SignatureRequest;
       let nextPdf = '';
       let signatureAudit = '';
       const [working] = await storage.read([doc.workingPath]);
-      if (!working?.content) return error('تعذر قراءة نسخة العمل', 500);
+      if (!working?.content)
+        return error('تعذر قراءة نسخة العمل', 500);
       nextPdf = working.content;
 
       if (next.action === 'sign') {
-        const dataUrl = body.signatureDataUrl || '';
-        const marker = 'data:image/png;base64,';
-        if (!dataUrl.startsWith(marker))
-          return error('ارسم توقيعك أو ارفع صورة التوقيع أولًا', 400);
-        const signatureBase64 = dataUrl.slice(marker.length);
-        if (signatureBase64.length > 2_500_000)
-          return error('صورة التوقيع أكبر من الحد المسموح', 413);
-
-        const pdf = await PDFDocument.load(
-          Buffer.from(working.content, 'base64')
-        );
-        const png = await pdf.embedPng(Buffer.from(signatureBase64, 'base64'));
-        const pages = pdf.getPages();
-        const requestedPage = Number(body.pageNumber ?? pages.length);
-        if (
-          !Number.isInteger(requestedPage) ||
-          requestedPage < 1 ||
-          requestedPage > pages.length
-        ) {
-          return error('رقم صفحة التوقيع غير صحيح', 400);
+        try {
+          const stamped = await stampSignature(
+            working.content,
+            body
+          );
+          nextPdf = stamped.pdfBase64;
+          signatureAudit = stamped.auditDetail;
+        } catch (errValue) {
+          return signatureErrorResponse(
+            errValue instanceof Error
+              ? errValue.message
+              : 'UNKNOWN'
+          );
         }
-
-        const allowedPositions = new Set([
-          'top-right',
-          'top-center',
-          'top-left',
-          'middle-right',
-          'middle-center',
-          'middle-left',
-          'bottom-right',
-          'bottom-center',
-          'bottom-left',
-        ]);
-        const position = body.position || 'bottom-right';
-        if (!allowedPositions.has(position))
-          return error('موضع التوقيع غير صحيح', 400);
-
-        const page = pages[requestedPage - 1];
-        const margin = 24;
-        const maxWidth = Math.min(240, page.getWidth() - margin * 2);
-        const requestedWidth = Number(body.width ?? 140);
-        if (!Number.isFinite(requestedWidth))
-          return error('حجم التوقيع غير صحيح', 400);
-        const width = Math.max(70, Math.min(maxWidth, requestedWidth));
-        let scaled = png.scale(width / png.width);
-        if (scaled.height > page.getHeight() - margin * 2) {
-          const heightScale = (page.getHeight() - margin * 2) / png.height;
-          scaled = png.scale(heightScale);
-        }
-
-        const horizontal = position.endsWith('right')
-          ? 'right'
-          : position.endsWith('left')
-            ? 'left'
-            : 'center';
-        const vertical = position.startsWith('top')
-          ? 'top'
-          : position.startsWith('bottom')
-            ? 'bottom'
-            : 'middle';
-
-        const x =
-          horizontal === 'right'
-            ? page.getWidth() - scaled.width - margin
-            : horizontal === 'left'
-              ? margin
-              : (page.getWidth() - scaled.width) / 2;
-        const y =
-          vertical === 'top'
-            ? page.getHeight() - scaled.height - margin
-            : vertical === 'bottom'
-              ? margin
-              : (page.getHeight() - scaled.height) / 2;
-
-        page.drawImage(png, {
-          x,
-          y,
-          width: scaled.width,
-          height: scaled.height,
-        });
-        nextPdf = await pdf.saveAsBase64({ dataUri: false });
-
-        const positionLabels: Record<string, string> = {
-          'top-right': 'أعلى يمين',
-          'top-center': 'أعلى وسط',
-          'top-left': 'أعلى يسار',
-          'middle-right': 'وسط يمين',
-          'middle-center': 'وسط الصفحة',
-          'middle-left': 'وسط يسار',
-          'bottom-right': 'أسفل يمين',
-          'bottom-center': 'أسفل وسط',
-          'bottom-left': 'أسفل يسار',
-        };
-        signatureAudit = ` — الصفحة ${requestedPage}، الموضع ${positionLabels[position]}، الحجم ${Math.round(width)}، المصدر ${body.source === 'image' ? 'صورة مرفوعة' : 'رسم مباشر'}، اللون ${body.color || '#111827'}`;
       }
 
       doc.signers = doc.signers.map(s =>
