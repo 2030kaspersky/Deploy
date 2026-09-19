@@ -1,0 +1,13 @@
+{
+  "headline": "الدخول إلى حذام",
+  "subtitle": "منصة التوقيع والاعتماد الإلكتروني",
+  "style": {
+    "mode": "light",
+    "accentColor": "#153f37",
+    "backgroundColor": "#eef3f0",
+    "panelColor": "#ffffff",
+    "textColor": "#153f37",
+    "fontFamily": "Cairo, system-ui, sans-serif",
+    "borderRadius": 16
+  }
+}
