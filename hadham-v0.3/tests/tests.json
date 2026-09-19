@@ -35,28 +35,34 @@
     "expected": "يبقى المعلم ظاهرًا بحالة بانتظار الدخول ولا تظهر أدوات إدارة المعلمين لحساب عضو عادي."
   },
   {
-    "name": "توقيع PDF وإكمال المعاملة",
+    "name": "تخصيص التوقيع ورفع صورته داخل PDF",
     "viewport": "mobile",
     "covers": [
       "signature canvas",
-      "sequential signing",
+      "signature image upload",
+      "white background cleanup",
+      "signature color",
+      "signature page selection",
+      "nine-position signature placement",
+      "signature size",
       "PDF stamping",
-      "final document storage",
-      "audit trail",
-      "SHA-256 final hash"
+      "audit trail"
     ],
-    "description": "يتحقق من رسم توقيع فعلي وإدراجه في PDF وتحويل حالة المعاملة إلى مكتملة.",
+    "description": "يتحقق من إمكانية الرسم أو رفع صورة توقيع ثم اختيار اللون والصفحة والموقع والحجم قبل تثبيته داخل PDF.",
     "steps": [
-      "افتح معاملة يكون المستخدم الحالي هو الموقّع التالي لها",
-      "ارسم توقيعًا في مساحة التوقيع واضغط تأكيد الإجراء",
-      "افتح سجل التدقيق وتحقق من حالة المستند"
+      "افتح معاملة يكون المستخدم الحالي هو الموقّع التالي لها وارسم توقيعًا ثم امسحه",
+      "ارفع صورة توقيع واختر لونًا وصفحة وموضعًا مختلفًا وحجمًا كبيرًا",
+      "أكد الإجراء ثم افتح سجل التدقيق ومعاينة PDF"
     ],
-    "expected": "تتحول المعاملة إلى مكتملة ويظهر حدث التوقيع وبصمة نهائية وتبقى معاينة النسخة النهائية متاحة."
+    "expected": "يظهر التوقيع في الصفحة والموضع والحجم المختارين باللون المحدد، ويسجل سجل التدقيق تفاصيل مكان التوقيع ومصدره."
   },
   {
     "name": "منع تجاوز ترتيب الموقعين",
     "viewport": "desktop",
-    "covers": ["authorization guardrail", "sequential signer enforcement"],
+    "covers": [
+      "authorization guardrail",
+      "sequential signer enforcement"
+    ],
     "description": "يتحقق من عدم السماح لموقّع لاحق بتنفيذ الإجراء قبل الطرف السابق.",
     "steps": [
       "افتح مستندًا متعدد الأطراف من حساب موقعّع ليس دوره الحالي",
