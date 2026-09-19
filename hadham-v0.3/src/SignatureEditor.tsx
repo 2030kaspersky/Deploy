@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Image as ImageIcon, Move, PenLine } from 'lucide-react';
+import {
+  getDocument,
+  GlobalWorkerOptions,
+  type PDFDocumentProxy,
+  type RenderTask,
+} from 'pdfjs-dist';
+import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { Image as ImageIcon, Maximize2, Move, PenLine } from 'lucide-react';
+
+GlobalWorkerOptions.workerSrc = workerUrl;
 
 export type SignaturePlacementPayload = {
   signatureDataUrl: string;
@@ -14,6 +23,7 @@ export type SignaturePlacementPayload = {
 type PageSize = { width: number; height: number };
 
 type Props = {
+  pdfBase64: string;
   pageCount: number;
   pageSizes: PageSize[];
   onChange: (payload: SignaturePlacementPayload | null) => void;
@@ -37,14 +47,32 @@ const hexToRgb = (hex: string) => {
 
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
 
-export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+const decodeBase64 = (value: string) => {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+};
+
+export function SignatureEditor({
+  pdfBase64,
+  pageCount,
+  pageSizes,
+  onChange,
+}: Props) {
+  const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
+  const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
-  const overlayRef = useRef<HTMLImageElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const drawing = useRef(false);
   const dragging = useRef(false);
+  const resizing = useRef(false);
   const dragOffset = useRef({ x: 0, y: 0 });
+  const resizeStart = useRef({ clientX: 0, widthPx: 0 });
+  const renderTask = useRef<RenderTask | null>(null);
 
+  const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(true);
   const [source, setSource] = useState<'draw' | 'image'>('draw');
   const [color, setColor] = useState('#111827');
   const [pageNumber, setPageNumber] = useState(Math.max(1, pageCount));
@@ -56,13 +84,13 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
-    setPageNumber((current) =>
+    setPageNumber(current =>
       Math.min(Math.max(1, current), Math.max(1, pageCount))
     );
   }, [pageCount]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
+    const canvas = drawingCanvasRef.current;
     if (!canvas) return;
     canvas.width = 900;
     canvas.height = 260;
@@ -73,6 +101,94 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
     ctx.lineJoin = 'round';
     ctx.strokeStyle = color;
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let loaded: PDFDocumentProxy | null = null;
+    const loadPdf = async () => {
+      if (!pdfBase64) {
+        setPdfLoading(false);
+        return;
+      }
+      setPdfLoading(true);
+      setNotice('');
+      try {
+        const task = getDocument({ data: decodeBase64(pdfBase64) });
+        loaded = await task.promise;
+        if (!cancelled) {
+          setPdfDoc(loaded);
+          setPdfLoading(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setNotice('تعذر عرض صفحة PDF مباشرة.');
+          setPdfLoading(false);
+        }
+      }
+    };
+    loadPdf();
+    return () => {
+      cancelled = true;
+      renderTask.current?.cancel();
+      loaded?.destroy();
+    };
+  }, [pdfBase64]);
+
+  useEffect(() => {
+    if (!pdfDoc || !pdfCanvasRef.current || !surfaceRef.current) return;
+    let cancelled = false;
+
+    const renderPage = async () => {
+      const canvas = pdfCanvasRef.current;
+      const surface = surfaceRef.current;
+      if (!canvas || !surface) return;
+      try {
+        renderTask.current?.cancel();
+        const page = await pdfDoc.getPage(pageNumber);
+        if (cancelled) return;
+        const baseViewport = page.getViewport({ scale: 1 });
+        const availableWidth = Math.max(
+          280,
+          Math.min(880, surface.clientWidth || 720)
+        );
+        const scale = availableWidth / baseViewport.width;
+        const viewport = page.getViewport({ scale });
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.floor(viewport.width * pixelRatio);
+        canvas.height = Math.floor(viewport.height * pixelRatio);
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        renderTask.current = page.render({
+          canvasContext: ctx,
+          viewport,
+          transform:
+            pixelRatio === 1
+              ? undefined
+              : [pixelRatio, 0, 0, pixelRatio, 0, 0],
+        });
+        await renderTask.current.promise;
+      } catch (err) {
+        if (
+          !cancelled &&
+          err instanceof Error &&
+          err.name !== 'RenderingCancelledException'
+        ) {
+          setNotice('تعذر تحديث معاينة صفحة PDF.');
+        }
+      }
+    };
+
+    const onResize = () => renderPage();
+    renderPage();
+    window.addEventListener('resize', onResize);
+    return () => {
+      cancelled = true;
+      renderTask.current?.cancel();
+      window.removeEventListener('resize', onResize);
+    };
+  }, [pdfDoc, pageNumber]);
 
   const publish = (
     nextDataUrl = signatureDataUrl,
@@ -94,7 +210,7 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
   };
 
   const updateSignatureFromCanvas = (nextSource: 'draw' | 'image') => {
-    const canvas = canvasRef.current;
+    const canvas = drawingCanvasRef.current;
     if (!canvas) return;
     const dataUrl = canvas.toDataURL('image/png');
     setSignatureDataUrl(dataUrl);
@@ -140,11 +256,9 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
   };
 
   const clear = () => {
-    const canvas = canvasRef.current;
+    const canvas = drawingCanvasRef.current;
     if (!canvas) return;
-    canvas
-      .getContext('2d')
-      ?.clearRect(0, 0, canvas.width, canvas.height);
+    canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
     setHasInk(false);
     setSignatureDataUrl('');
     setNotice('');
@@ -152,7 +266,7 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
   };
 
   const recolor = (nextColor: string) => {
-    const canvas = canvasRef.current;
+    const canvas = drawingCanvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
     const rgb = hexToRgb(nextColor);
@@ -188,10 +302,9 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
     reader.onload = () => {
       const image = new window.Image();
       image.onload = () => {
-        const canvas = canvasRef.current;
+        const canvas = drawingCanvasRef.current;
         const ctx = canvas?.getContext('2d');
         if (!canvas || !ctx) return;
-
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         const maxWidth = canvas.width * 0.82;
         const maxHeight = canvas.height * 0.72;
@@ -204,7 +317,6 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
         const x = (canvas.width - drawWidth) / 2;
         const y = (canvas.height - drawHeight) / 2;
         ctx.drawImage(image, x, y, drawWidth, drawHeight);
-
         const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const rgb = hexToRgb(color);
         for (let i = 0; i < data.data.length; i += 4) {
@@ -228,7 +340,6 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
           );
         }
         ctx.putImageData(data, 0, 0);
-
         setNotice(
           'تم تجهيز صورة التوقيع وإزالة الخلفية البيضاء قدر الإمكان.'
         );
@@ -244,7 +355,7 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
     pageSizes[0] || { width: 595, height: 842 };
   const widthPercent = Math.min(
     48,
-    Math.max(12, (width / Math.max(1, pageSize.width)) * 100)
+    Math.max(10, (width / Math.max(1, pageSize.width)) * 100)
   );
   const signatureAspect = 900 / 260;
   const heightPercent = Math.min(
@@ -254,10 +365,10 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
       signatureAspect
   );
 
-  const startDrag = (event: React.PointerEvent<HTMLImageElement>) => {
+  const startDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     const surface = surfaceRef.current;
     const overlay = overlayRef.current;
-    if (!surface || !overlay) return;
+    if (!surface || !overlay || resizing.current) return;
     dragging.current = true;
     event.currentTarget.setPointerCapture(event.pointerId);
     const rect = overlay.getBoundingClientRect();
@@ -267,12 +378,11 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
     };
   };
 
-  const moveDrag = (event: React.PointerEvent<HTMLImageElement>) => {
-    if (!dragging.current) return;
+  const moveDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging.current || resizing.current) return;
     const surface = surfaceRef.current;
     const overlay = overlayRef.current;
     if (!surface || !overlay) return;
-
     const surfaceRect = surface.getBoundingClientRect();
     const overlayRect = overlay.getBoundingClientRect();
     const maxX = Math.max(1, surfaceRect.width - overlayRect.width);
@@ -291,11 +401,8 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
         event.clientY - surfaceRect.top - dragOffset.current.y
       )
     );
-
-    const nextX = clamp(left / maxX);
-    const nextY = clamp(top / maxY);
-    setXRatio(nextX);
-    setYRatio(nextY);
+    setXRatio(clamp(left / maxX));
+    setYRatio(clamp(top / maxY));
   };
 
   const endDrag = () => {
@@ -304,157 +411,212 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
     if (signatureDataUrl) publish(signatureDataUrl, { xRatio, yRatio });
   };
 
+  const startResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+    resizing.current = true;
+    dragging.current = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeStart.current = {
+      clientX: event.clientX,
+      widthPx: overlay.getBoundingClientRect().width,
+    };
+  };
+
+  const moveResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!resizing.current) return;
+    event.stopPropagation();
+    const surface = surfaceRef.current;
+    if (!surface) return;
+    const surfaceWidth = Math.max(1, surface.getBoundingClientRect().width);
+    const nextWidthPx = Math.max(
+      55,
+      Math.min(
+        surfaceWidth * 0.55,
+        resizeStart.current.widthPx +
+          (event.clientX - resizeStart.current.clientX)
+      )
+    );
+    const nextPdfWidth = Math.max(
+      70,
+      Math.min(
+        260,
+        (nextWidthPx / surfaceWidth) * pageSize.width
+      )
+    );
+    setWidth(Math.round(nextPdfWidth));
+  };
+
+  const endResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (!resizing.current) return;
+    resizing.current = false;
+    if (signatureDataUrl) publish(signatureDataUrl, { width });
+  };
+
   useEffect(() => {
     if (signatureDataUrl) {
-      publish(signatureDataUrl, { xRatio, yRatio });
+      publish(signatureDataUrl, { xRatio, yRatio, width });
     }
-  }, [xRatio, yRatio]);
+  }, [xRatio, yRatio, width]);
 
   const sizeLabel =
     width <= 110 ? 'صغير' : width <= 165 ? 'متوسط' : 'كبير';
 
   return (
-    <div className="signature-editor">
-      <div className="signature-source-tabs">
-        <button
-          type="button"
-          className={source === 'draw' ? 'active' : ''}
-          onClick={() => {
-            setSource('draw');
-            if (signatureDataUrl)
-              publish(signatureDataUrl, { source: 'draw' });
-          }}
-        >
-          <PenLine size={16} /> رسم التوقيع
-        </button>
-        <label
-          className={
-            source === 'image' ? 'active upload-tab' : 'upload-tab'
-          }
-        >
-          <ImageIcon size={16} /> رفع صورة التوقيع
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            onChange={(event) => uploadImage(event.target.files?.[0])}
-          />
-        </label>
-      </div>
-
-      <canvas
-        ref={canvasRef}
-        className={
-          source === 'draw'
-            ? 'signature-canvas'
-            : 'signature-canvas image-mode'
-        }
-        onPointerDown={startDraw}
-        onPointerMove={moveDraw}
-        onPointerUp={endDraw}
-        onPointerCancel={endDraw}
-      />
-
-      <div className="signature-toolbar">
-        <button type="button" className="text-link" onClick={clear}>
-          مسح التوقيع
-        </button>
-        <span>
-          {source === 'image' ? 'صورة توقيع' : 'توقيع مرسوم'}
-        </span>
-      </div>
-
-      <div className="signature-settings">
-        <label>
-          لون التوقيع
-          <div className="color-picker-row">
-            {colors.map((item) => (
-              <button
-                type="button"
-                key={item.value}
-                title={item.label}
-                aria-label={item.label}
-                className={
-                  color === item.value
-                    ? 'color-dot selected'
-                    : 'color-dot'
-                }
-                style={{ backgroundColor: item.value }}
-                onClick={() => recolor(item.value)}
-              />
-            ))}
-            <input
-              className="custom-color"
-              type="color"
-              value={color}
-              title="لون مخصص"
-              onChange={(event) => recolor(event.target.value)}
-            />
-          </div>
-        </label>
-
-        <label>
-          الصفحة
-          <select
-            value={pageNumber}
-            onChange={(event) => {
-              const value = Number(event.target.value);
-              setPageNumber(value);
+    <div className="signature-editor direct-document-editor">
+      <div className="signature-editor-top">
+        <div className="signature-source-tabs">
+          <button
+            type="button"
+            className={source === 'draw' ? 'active' : ''}
+            onClick={() => {
+              setSource('draw');
               if (signatureDataUrl)
-                publish(signatureDataUrl, { pageNumber: value });
+                publish(signatureDataUrl, { source: 'draw' });
             }}
           >
-            {Array.from(
-              { length: Math.max(1, pageCount) },
-              (_, index) => index + 1
-            ).map((page) => (
-              <option key={page} value={page}>
-                الصفحة {page}
-              </option>
-            ))}
-          </select>
-        </label>
+            <PenLine size={16} /> رسم التوقيع
+          </button>
+          <label
+            className={
+              source === 'image' ? 'active upload-tab' : 'upload-tab'
+            }
+          >
+            <ImageIcon size={16} /> رفع صورة التوقيع
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={event => uploadImage(event.target.files?.[0])}
+            />
+          </label>
+        </div>
 
-        <label>
-          حجم التوقيع <strong>{sizeLabel}</strong>
-          <input
-            type="range"
-            min="80"
-            max="220"
-            step="5"
-            value={width}
-            onChange={(event) => {
-              const value = Number(event.target.value);
-              setWidth(value);
-              if (signatureDataUrl)
-                publish(signatureDataUrl, { width: value });
-            }}
-          />
-        </label>
+        <canvas
+          ref={drawingCanvasRef}
+          className={
+            source === 'draw'
+              ? 'signature-canvas'
+              : 'signature-canvas image-mode'
+          }
+          onPointerDown={startDraw}
+          onPointerMove={moveDraw}
+          onPointerUp={endDraw}
+          onPointerCancel={endDraw}
+        />
+
+        <div className="signature-toolbar">
+          <button type="button" className="text-link" onClick={clear}>
+            مسح التوقيع
+          </button>
+          <span>
+            {source === 'image' ? 'صورة توقيع' : 'توقيع مرسوم'}
+          </span>
+        </div>
+
+        <div className="signature-settings">
+          <label>
+            لون التوقيع
+            <div className="color-picker-row">
+              {colors.map(item => (
+                <button
+                  type="button"
+                  key={item.value}
+                  title={item.label}
+                  aria-label={item.label}
+                  className={
+                    color === item.value
+                      ? 'color-dot selected'
+                      : 'color-dot'
+                  }
+                  style={{ backgroundColor: item.value }}
+                  onClick={() => recolor(item.value)}
+                />
+              ))}
+              <input
+                className="custom-color"
+                type="color"
+                value={color}
+                title="لون مخصص"
+                onChange={event => recolor(event.target.value)}
+              />
+            </div>
+          </label>
+
+          <label>
+            الصفحة
+            <select
+              value={pageNumber}
+              onChange={event => {
+                const value = Number(event.target.value);
+                setPageNumber(value);
+                setXRatio(0.72);
+                setYRatio(0.82);
+                if (signatureDataUrl) {
+                  publish(signatureDataUrl, {
+                    pageNumber: value,
+                    xRatio: 0.72,
+                    yRatio: 0.82,
+                  });
+                }
+              }}
+            >
+              {Array.from(
+                { length: Math.max(1, pageCount) },
+                (_, index) => index + 1
+              ).map(page => (
+                <option key={page} value={page}>
+                  الصفحة {page}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            حجم التوقيع <strong>{sizeLabel}</strong>
+            <input
+              type="range"
+              min="80"
+              max="220"
+              step="5"
+              value={width}
+              onChange={event => setWidth(Number(event.target.value))}
+            />
+          </label>
+        </div>
       </div>
 
-      <div className="placement-heading">
+      <div className="direct-placement-heading">
         <div>
-          <strong>اسحب التوقيع إلى مكانه</strong>
-          <span>يمكنك تحريكه بالماوس أو اللمس داخل الصفحة</span>
+          <strong>حدد موضع التوقيع مباشرة على المستند</strong>
+          <span>
+            اسحب التوقيع فوق صفحة PDF واستخدم المقبض لتغيير حجمه.
+          </span>
         </div>
-        <Move size={18} />
+        <div className="placement-icons">
+          <Move size={17} />
+          <Maximize2 size={17} />
+        </div>
       </div>
 
       <div
         ref={surfaceRef}
-        className="signature-page-surface"
+        className="signature-page-surface direct-pdf-stage"
         style={{
           aspectRatio: `${pageSize.width} / ${pageSize.height}`,
         }}
       >
+        {pdfLoading && (
+          <div className="pdf-render-loading">جارٍ عرض الصفحة…</div>
+        )}
+        <canvas ref={pdfCanvasRef} className="pdf-page-canvas" />
         <div className="page-number-chip">صفحة {pageNumber}</div>
-        <div className="page-safe-area" />
+
         {signatureDataUrl ? (
-          <img
+          <div
             ref={overlayRef}
-            src={signatureDataUrl}
-            alt="موضع التوقيع"
-            className="signature-drag-overlay"
+            className="signature-overlay-box"
             style={{
               width: `${widthPercent}%`,
               left: `${xRatio * (100 - widthPercent)}%`,
@@ -464,18 +626,33 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
             onPointerMove={moveDrag}
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
-            draggable={false}
-          />
+          >
+            <img
+              src={signatureDataUrl}
+              alt="التوقيع فوق المستند"
+              draggable={false}
+            />
+            <button
+              type="button"
+              className="signature-resize-handle"
+              aria-label="تغيير حجم التوقيع"
+              title="اسحب لتغيير الحجم"
+              onPointerDown={startResize}
+              onPointerMove={moveResize}
+              onPointerUp={endResize}
+              onPointerCancel={endResize}
+            />
+          </div>
         ) : (
           <div className="placement-empty">
-            ارسم أو ارفع توقيعك ليظهر هنا
+            ارسم أو ارفع توقيعك، ثم سيظهر فوق المستند مباشرة.
           </div>
         )}
       </div>
 
       <div className="notice placement-notice">
-        موضع السحب يمثل مكان التوقيع داخل الصفحة، وستظهر المعاينة
-        الفعلية على ملف PDF قبل الاعتماد.
+        ما تراه هنا هو صفحة PDF الفعلية. موضع وحجم التوقيع في هذه
+        الشاشة يُستخدمان عند إنشاء المعاينة النهائية وعند الاعتماد.
       </div>
 
       {notice && <div className="notice">{notice}</div>}
