@@ -978,7 +978,10 @@ function DocumentView({
   const [busy, setBusy] = useState(true);
   const [notice, setNotice] = useState('');
   const [pageCount, setPageCount] = useState(1);
+  const [pageSizes, setPageSizes] = useState<Array<{ width: number; height: number }>>([]);
   const [signaturePayload, setSignaturePayload] = useState<SignaturePlacementPayload | null>(null);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
 
   const load = async () => {
     const res = await api.get(`/api/documents/${docId}`);
@@ -986,6 +989,7 @@ function DocumentView({
     setFileUrl(res.data.fileUrl as string);
     setNextSignerEmail(res.data.nextSignerEmail as string | null);
     setPageCount(Number(res.data.pageCount || 1));
+    setPageSizes((res.data.pageSizes || []) as Array<{ width: number; height: number }>);
     setBusy(false);
   };
 
@@ -996,6 +1000,31 @@ function DocumentView({
     });
   }, [docId]);
 
+  const previewSignature = async () => {
+    if (!doc || !signaturePayload) {
+      setNotice('حدد التوقيع ومكانه أولًا.');
+      return;
+    }
+    setBusy(true);
+    setNotice('');
+    try {
+      const res = await api.post(
+        `/api/documents/${doc.docId}/preview-signature`,
+        signaturePayload
+      );
+      const url = String(res.data.previewUrl || '');
+      if (!url) throw new Error('تعذر إنشاء رابط المعاينة');
+      setPreviewUrl(url);
+      setShowPreview(true);
+    } catch (err: unknown) {
+      setNotice(
+        err instanceof Error ? err.message : 'تعذر إنشاء المعاينة'
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const act = async () => {
     if (!doc) return;
     const mine = doc.signers.find(
@@ -1005,12 +1034,18 @@ function DocumentView({
       setNotice('ارسم توقيعك أو ارفع صورة التوقيع وحدد مكانه قبل التأكيد.');
       return;
     }
+    if (mine?.action === 'sign' && !previewUrl) {
+      setNotice('يجب معاينة التوقيع على المستند قبل اعتماده.');
+      return;
+    }
     setBusy(true);
     setNotice('');
     try {
       const payload = mine?.action === 'sign' ? signaturePayload : {};
       await api.post(`/api/documents/${doc.docId}/act`, payload);
       setSignaturePayload(null);
+      setPreviewUrl('');
+      setShowPreview(false);
       await load();
       setNotice('تم تسجيل الإجراء بنجاح.');
     } catch (err: unknown) {
@@ -1077,29 +1112,77 @@ function DocumentView({
         </div>
         <div className="detail-side">
           <Card>
-            <span className="eyebrow">مسار الاعتماد</span>
-            <div className="timeline">
-              {doc.signers.map(s => (
-                <div
-                  className={
-                    s.status === 'completed' ? 'time-row done' : 'time-row'
-                  }
-                  key={s.email}
-                >
-                  <div className="time-dot">
-                    {s.status === 'completed' ? '✓' : s.order}
-                  </div>
-                  <div>
-                    <strong>{s.name}</strong>
-                    <span>
-                      {actionLabel[s.action]} ·{' '}
-                      {s.status === 'completed'
-                        ? formatDate(s.actedAt)
-                        : 'بانتظار الدور'}
-                    </span>
-                  </div>
-                </div>
-              ))}
+            <div className="signer-card-head">
+              <div>
+                <span className="eyebrow">تسلسل الموقعين</span>
+                <h3>حالة جميع الأطراف</h3>
+              </div>
+              <div className="signer-counts">
+                <span><b>{doc.signers.filter(s => s.status === 'completed').length}</b> تم</span>
+                <span><b>{doc.signers.filter(s => s.status === 'pending').length}</b> متبقٍ</span>
+              </div>
+            </div>
+            <div className="signer-progress-track">
+              <i
+                style={{
+                  width: `${doc.signers.length ? (doc.signers.filter(s => s.status === 'completed').length / doc.signers.length) * 100 : 0}%`,
+                }}
+              />
+            </div>
+            <div className="timeline signer-timeline">
+              {[...doc.signers]
+                .sort((a, b) => a.order - b.order)
+                .map(s => {
+                  const isCurrent =
+                    s.status === 'pending' &&
+                    nextSignerEmail?.toLowerCase() === s.email.toLowerCase();
+                  const doneLabel =
+                    s.action === 'sign'
+                      ? 'وقّع'
+                      : s.action === 'approve'
+                        ? 'اعتمد'
+                        : 'أقر بالاطلاع';
+                  return (
+                    <div
+                      className={
+                        s.status === 'completed'
+                          ? 'time-row done'
+                          : isCurrent
+                            ? 'time-row current'
+                            : 'time-row'
+                      }
+                      key={s.email}
+                    >
+                      <div className="time-dot">
+                        {s.status === 'completed' ? '✓' : s.order}
+                      </div>
+                      <div className="signer-row-main">
+                        <div>
+                          <strong>{s.name}</strong>
+                          <span>{actionLabel[s.action]} · الترتيب {s.order}</span>
+                        </div>
+                        <span
+                          className={
+                            s.status === 'completed'
+                              ? 'signer-state done'
+                              : isCurrent
+                                ? 'signer-state current'
+                                : 'signer-state pending'
+                          }
+                        >
+                          {s.status === 'completed'
+                            ? doneLabel
+                            : isCurrent
+                              ? 'دوره الآن'
+                              : 'لم يوقع بعد'}
+                        </span>
+                        {s.status === 'completed' && (
+                          <small>{formatDate(s.actedAt)}</small>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           </Card>
 
@@ -1113,14 +1196,32 @@ function DocumentView({
                     : 'الإقرار بالاطلاع'}
               </h3>
               {mine?.action === 'sign' && (
-                <SignatureEditor
-                  pageCount={pageCount}
-                  onChange={setSignaturePayload}
-                />
+                <>
+                  <SignatureEditor
+                    pageCount={pageCount}
+                    pageSizes={pageSizes}
+                    onChange={payload => {
+                      setSignaturePayload(payload);
+                      setPreviewUrl('');
+                    }}
+                  />
+                  <Button
+                    className="wide"
+                    disabled={busy || !signaturePayload}
+                    onClick={previewSignature}
+                  >
+                    {busy ? 'جارٍ تجهيز المعاينة…' : 'معاينة التوقيع قبل الاعتماد'}
+                  </Button>
+                  <small className="preview-helper">
+                    أي تعديل على موضع التوقيع أو حجمه أو لونه يتطلب معاينة جديدة قبل الاعتماد.
+                  </small>
+                </>
               )}
-              <Button className="wide" disabled={busy} onClick={act}>
-                {busy ? 'جارٍ الحفظ…' : 'تأكيد الإجراء'}
-              </Button>
+              {mine?.action !== 'sign' && (
+                <Button className="wide" disabled={busy} onClick={act}>
+                  {busy ? 'جارٍ الحفظ…' : 'تأكيد الإجراء'}
+                </Button>
+              )}
             </Card>
           )}
 
@@ -1156,6 +1257,40 @@ function DocumentView({
           </Card>
         </div>
       </div>
+
+      {showPreview && previewUrl && (
+        <div className="modal-backdrop" onClick={() => setShowPreview(false)}>
+          <Card
+            className="modal signature-preview-modal"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="section-title">
+              <div>
+                <span className="eyebrow">معاينة قبل الاعتماد</span>
+                <h2>راجع مكان التوقيع وحجمه</h2>
+              </div>
+              <button
+                className="text-link"
+                onClick={() => setShowPreview(false)}
+              >
+                تعديل التوقيع
+              </button>
+            </div>
+            <div className="preview-pdf-frame">
+              <iframe title="معاينة التوقيع" src={previewUrl} />
+            </div>
+            <div className="preview-confirm-bar">
+              <div>
+                <strong>هل التوقيع في المكان الصحيح؟</strong>
+                <span>لن يتم تثبيت التوقيع حتى تضغط اعتماد التوقيع.</span>
+              </div>
+              <Button disabled={busy} onClick={act}>
+                {busy ? 'جارٍ الاعتماد…' : 'اعتماد التوقيع'}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {showAudit && (
         <div className="modal-backdrop" onClick={() => setShowAudit(false)}>
