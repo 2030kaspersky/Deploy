@@ -944,6 +944,20 @@ function NewDocument({
             );
           })}
         </div>
+        <div className="action-help-grid">
+          <div>
+            <strong>التوقيع</strong>
+            <span>يضيف توقيع الشخص المرئي إلى ملف PDF.</span>
+          </div>
+          <div>
+            <strong>الاعتماد</strong>
+            <span>يسجل موافقة الشخص الرسمية على المستند دون إضافة صورة توقيع.</span>
+          </div>
+          <div>
+            <strong>الإقرار بالاطلاع</strong>
+            <span>يثبت أن الشخص اطلع على المستند، ولا يعني موافقته على محتواه.</span>
+          </div>
+        </div>
         {notice && <div className="notice error">{notice}</div>}
         <Button
           className="wide"
@@ -979,6 +993,7 @@ function DocumentView({
   const [notice, setNotice] = useState('');
   const [pageCount, setPageCount] = useState(1);
   const [pageSizes, setPageSizes] = useState<Array<{ width: number; height: number }>>([]);
+  const [pdfSource, setPdfSource] = useState('');
   const [signaturePayload, setSignaturePayload] = useState<SignaturePlacementPayload | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [showPreview, setShowPreview] = useState(false);
@@ -990,6 +1005,30 @@ function DocumentView({
     setNextSignerEmail(res.data.nextSignerEmail as string | null);
     setPageCount(Number(res.data.pageCount || 1));
     setPageSizes((res.data.pageSizes || []) as Array<{ width: number; height: number }>);
+
+    const loadedDoc = res.data.document as DocumentDetail;
+    const loadedNextSigner = String(res.data.nextSignerEmail || '');
+    const currentSigner = loadedDoc.signers.find(
+      s => s.email.toLowerCase() === me.profile!.email.toLowerCase()
+    );
+    const shouldLoadSignaturePdf =
+      currentSigner?.action === 'sign' &&
+      currentSigner.status === 'pending' &&
+      loadedNextSigner.toLowerCase() === me.profile!.email.toLowerCase();
+
+    if (shouldLoadSignaturePdf) {
+      try {
+        const pdfRes = await api.get(
+          `/api/documents/${docId}/pdf-source`
+        );
+        setPdfSource(String(pdfRes.data.pdfBase64 || ''));
+      } catch {
+        setPdfSource('');
+      }
+    } else {
+      setPdfSource('');
+    }
+
     setBusy(false);
   };
 
@@ -1102,9 +1141,31 @@ function DocumentView({
         </Button>
       </header>
 
-      <div className="document-layout">
-        <div className="pdf-panel">
-          {fileUrl ? (
+      <div
+        className={
+          canAct && mine?.action === 'sign'
+            ? 'document-layout signing-mode'
+            : 'document-layout'
+        }
+      >
+        <div
+          className={
+            canAct && mine?.action === 'sign'
+              ? 'pdf-panel interactive-signing-panel'
+              : 'pdf-panel'
+          }
+        >
+          {canAct && mine?.action === 'sign' && pdfSource ? (
+            <SignatureEditor
+              pdfBase64={pdfSource}
+              pageCount={pageCount}
+              pageSizes={pageSizes}
+              onChange={payload => {
+                setSignaturePayload(payload);
+                setPreviewUrl('');
+              }}
+            />
+          ) : fileUrl ? (
             <iframe title="معاينة المستند" src={fileUrl} />
           ) : (
             <div className="empty">تعذر إنشاء رابط المعاينة.</div>
@@ -1197,23 +1258,18 @@ function DocumentView({
               </h3>
               {mine?.action === 'sign' && (
                 <>
-                  <SignatureEditor
-                    pageCount={pageCount}
-                    pageSizes={pageSizes}
-                    onChange={payload => {
-                      setSignaturePayload(payload);
-                      setPreviewUrl('');
-                    }}
-                  />
+                  <div className="notice direct-signing-note">
+                    حرّك التوقيع وغيّر حجمه مباشرة فوق صفحة PDF في الجهة المقابلة، ثم أنشئ المعاينة النهائية.
+                  </div>
                   <Button
                     className="wide"
                     disabled={busy || !signaturePayload}
                     onClick={previewSignature}
                   >
-                    {busy ? 'جارٍ تجهيز المعاينة…' : 'معاينة التوقيع قبل الاعتماد'}
+                    {busy ? 'جارٍ تجهيز المعاينة…' : 'معاينة نهائية قبل الاعتماد'}
                   </Button>
                   <small className="preview-helper">
-                    أي تعديل على موضع التوقيع أو حجمه أو لونه يتطلب معاينة جديدة قبل الاعتماد.
+                    أي تعديل بعد المعاينة يلغيها تلقائيًا ويستلزم معاينة جديدة.
                   </small>
                 </>
               )}
