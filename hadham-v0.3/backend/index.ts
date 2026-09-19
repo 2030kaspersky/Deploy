@@ -695,6 +695,41 @@ export const handler = router({
     },
   ],
 
+  'GET /api/documents/:id/pdf-source': [
+    requireAuth(),
+    async ctx => {
+      const profile = await resolveProfile(
+        ctx.user!.userId,
+        ctx.user!.email,
+        ctx.user!.name
+      );
+      if (!profile) return error('غير مصرح', 403);
+      const doc = await singleton<DocumentRecord>(
+        `doc:${ctx.params.id}`
+      );
+      if (!doc || !(await canAccess(profile, doc)))
+        return error('المستند غير موجود', 404);
+
+      const pending = doc.signers
+        .filter(s => s.status === 'pending')
+        .sort((a, b) => a.order - b.order);
+      const next = pending[0];
+      if (
+        !next ||
+        next.action !== 'sign' ||
+        norm(next.email) !== norm(profile.email)
+      ) {
+        return error('عرض محرر التوقيع متاح للموقّع الحالي فقط', 403);
+      }
+
+      const [working] = await storage.read([doc.workingPath]);
+      if (!working?.content)
+        return error('تعذر قراءة نسخة العمل', 500);
+
+      return json({ pdfBase64: working.content });
+    },
+  ],
+
   'GET /api/documents/:id/audit': [
     requireAuth(),
     async ctx => {
