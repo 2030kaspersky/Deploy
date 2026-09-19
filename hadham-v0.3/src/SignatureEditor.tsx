@@ -246,6 +246,13 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
     48,
     Math.max(12, (width / Math.max(1, pageSize.width)) * 100)
   );
+  const signatureAspect = 900 / 260;
+  const heightPercent = Math.min(
+    35,
+    widthPercent *
+      (pageSize.width / Math.max(1, pageSize.height)) /
+      signatureAspect
+  );
 
   const startDrag = (event: React.PointerEvent<HTMLImageElement>) => {
     const surface = surfaceRef.current;
@@ -451,7 +458,7 @@ export function SignatureEditor({ pageCount, pageSizes, onChange }: Props) {
             style={{
               width: `${widthPercent}%`,
               left: `${xRatio * (100 - widthPercent)}%`,
-              top: `${yRatio * 88}%`,
+              top: `${yRatio * (100 - heightPercent)}%`,
             }}
             onPointerDown={startDrag}
             onPointerMove={moveDrag}
