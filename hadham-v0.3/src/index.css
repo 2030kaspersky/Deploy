@@ -993,6 +993,76 @@ textarea {
   background: #eef1f0;
   color: #697671 !important;
 }
+.action-help-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  margin: -4px 0 15px;
+}
+.action-help-grid > div {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 9px;
+  background: #f8faf9;
+}
+.action-help-grid strong,
+.action-help-grid span {
+  display: block;
+}
+.action-help-grid strong {
+  font-size: 10px;
+  color: var(--ink);
+}
+.action-help-grid span {
+  margin-top: 3px;
+  font-size: 9px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.signing-mode {
+  grid-template-columns: minmax(0, 1.65fr) minmax(300px, .35fr);
+}
+.interactive-signing-panel {
+  padding: 14px;
+  background: #e5ebe8;
+  overflow: auto;
+}
+.interactive-signing-panel .signature-editor {
+  max-width: 900px;
+  margin: 0 auto;
+}
+.signature-editor-top {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  padding: 13px;
+  margin-bottom: 12px;
+}
+.direct-placement-heading {
+  max-width: 880px;
+  margin: 0 auto 9px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.direct-placement-heading strong,
+.direct-placement-heading span {
+  display: block;
+}
+.direct-placement-heading strong {
+  font-size: 13px;
+}
+.direct-placement-heading span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.placement-icons {
+  display: flex;
+  gap: 7px;
+  color: var(--ink-2);
+}
 .signature-page-surface {
   width: min(100%, 360px);
   margin: 0 auto;
@@ -1024,6 +1094,55 @@ textarea {
   background: rgba(21,63,55,.82);
   color: white;
   font-size: 9px;
+}
+.pdf-page-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: white;
+}
+.pdf-render-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  background: rgba(245,248,246,.88);
+  color: var(--muted);
+  font-size: 12px;
+}
+.signature-overlay-box {
+  position: absolute;
+  z-index: 8;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  min-width: 55px;
+}
+.signature-overlay-box:active {
+  cursor: grabbing;
+}
+.signature-overlay-box img {
+  width: 100%;
+  display: block;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,.12));
+}
+.signature-resize-handle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  left: -10px;
+  bottom: -10px;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: var(--ink-2);
+  box-shadow: 0 0 0 1px rgba(21,63,55,.35);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.direct-signing-note {
+  margin-bottom: 10px;
 }
 .signature-drag-overlay {
   position: absolute;
@@ -1101,6 +1220,15 @@ textarea {
 @media (max-width: 720px) {
   .signature-settings {
     grid-template-columns: 1fr;
+  }
+  .action-help-grid {
+    grid-template-columns: 1fr;
+  }
+  .signing-mode {
+    grid-template-columns: 1fr;
+  }
+  .interactive-signing-panel {
+    padding: 8px;
   }
   .signature-page-surface {
     width: min(100%, 300px);
