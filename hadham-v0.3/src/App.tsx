@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, auth } from '@appdeploy/client';
+import { SignatureEditor, type SignaturePlacementPayload } from './SignatureEditor';
 import {
   Archive,
   CheckCircle2,
@@ -976,14 +977,15 @@ function DocumentView({
   const [showAudit, setShowAudit] = useState(false);
   const [busy, setBusy] = useState(true);
   const [notice, setNotice] = useState('');
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const drawing = useRef(false);
+  const [pageCount, setPageCount] = useState(1);
+  const [signaturePayload, setSignaturePayload] = useState<SignaturePlacementPayload | null>(null);
 
   const load = async () => {
     const res = await api.get(`/api/documents/${docId}`);
     setDoc(res.data.document as DocumentDetail);
     setFileUrl(res.data.fileUrl as string);
     setNextSignerEmail(res.data.nextSignerEmail as string | null);
+    setPageCount(Number(res.data.pageCount || 1));
     setBusy(false);
   };
 
@@ -994,67 +996,21 @@ function DocumentView({
     });
   }, [docId]);
 
-  useEffect(() => {
-    if (!doc || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = Math.max(
-      560,
-      Math.floor(rect.width * window.devicePixelRatio)
-    );
-    canvas.height = Math.floor(180 * window.devicePixelRatio);
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-      ctx.lineWidth = 2.2;
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = '#153f37';
-    }
-  }, [doc?.docId]);
-
-  const point = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-  };
-
-  const startDraw = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    drawing.current = true;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const ctx = event.currentTarget.getContext('2d');
-    const p = point(event);
-    ctx?.beginPath();
-    ctx?.moveTo(p.x, p.y);
-  };
-
-  const moveDraw = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!drawing.current) return;
-    const ctx = event.currentTarget.getContext('2d');
-    const p = point(event);
-    ctx?.lineTo(p.x, p.y);
-    ctx?.stroke();
-  };
-
-  const clear = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
-  };
-
   const act = async () => {
     if (!doc) return;
     const mine = doc.signers.find(
       s => s.email.toLowerCase() === me.profile!.email.toLowerCase()
     );
+    if (mine?.action === 'sign' && !signaturePayload) {
+      setNotice('ارسم توقيعك أو ارفع صورة التوقيع وحدد مكانه قبل التأكيد.');
+      return;
+    }
     setBusy(true);
     setNotice('');
     try {
-      const payload =
-        mine?.action === 'sign'
-          ? {
-              signatureDataUrl: canvasRef.current?.toDataURL('image/png') || '',
-            }
-          : {};
+      const payload = mine?.action === 'sign' ? signaturePayload : {};
       await api.post(`/api/documents/${doc.docId}/act`, payload);
+      setSignaturePayload(null);
       await load();
       setNotice('تم تسجيل الإجراء بنجاح.');
     } catch (err: unknown) {
@@ -1157,23 +1113,10 @@ function DocumentView({
                     : 'الإقرار بالاطلاع'}
               </h3>
               {mine?.action === 'sign' && (
-                <>
-                  <canvas
-                    ref={canvasRef}
-                    className="signature-canvas"
-                    onPointerDown={startDraw}
-                    onPointerMove={moveDraw}
-                    onPointerUp={() => {
-                      drawing.current = false;
-                    }}
-                    onPointerCancel={() => {
-                      drawing.current = false;
-                    }}
-                  />
-                  <button className="text-link" onClick={clear}>
-                    مسح التوقيع
-                  </button>
-                </>
+                <SignatureEditor
+                  pageCount={pageCount}
+                  onChange={setSignaturePayload}
+                />
               )}
               <Button className="wide" disabled={busy} onClick={act}>
                 {busy ? 'جارٍ الحفظ…' : 'تأكيد الإجراء'}
