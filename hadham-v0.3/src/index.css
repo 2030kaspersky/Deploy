@@ -919,6 +919,208 @@ textarea {
   border-color: var(--ink);
   box-shadow: 0 7px 14px rgba(21,63,55,.14);
 }
+.signer-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.signer-card-head h3 {
+  margin: 0;
+  font-size: 17px;
+}
+.signer-counts {
+  display: flex;
+  gap: 7px;
+}
+.signer-counts span {
+  background: #f3f7f5;
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.signer-counts b {
+  color: var(--ink);
+}
+.signer-progress-track {
+  height: 6px;
+  background: #e8eeeb;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 11px;
+}
+.signer-progress-track i {
+  display: block;
+  height: 100%;
+  background: var(--ink-2);
+  border-radius: inherit;
+}
+.time-row.current .time-dot {
+  background: #fff3d7;
+  border-color: #d1ab59;
+  color: #7d601f;
+  box-shadow: 0 0 0 4px rgba(209,171,89,.12);
+}
+.signer-row-main {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 5px 9px;
+  align-items: center;
+}
+.signer-row-main > small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 9px;
+}
+.signer-state {
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 9px !important;
+  white-space: nowrap;
+}
+.signer-state.done {
+  background: #e4f4e9;
+  color: #267247 !important;
+}
+.signer-state.current {
+  background: #fff3d7;
+  color: #7d601f !important;
+}
+.signer-state.pending {
+  background: #eef1f0;
+  color: #697671 !important;
+}
+.signature-page-surface {
+  width: min(100%, 360px);
+  margin: 0 auto;
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(21,63,55,.04) 1px, transparent 1px),
+    linear-gradient(rgba(21,63,55,.04) 1px, transparent 1px),
+    white;
+  background-size: 25% 25%;
+  border: 1px solid #cfdad6;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(28,57,50,.08);
+  touch-action: none;
+}
+.page-safe-area {
+  position: absolute;
+  inset: 5%;
+  border: 1px dashed rgba(21,63,55,.12);
+  pointer-events: none;
+}
+.page-number-chip {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(21,63,55,.82);
+  color: white;
+  font-size: 9px;
+}
+.signature-drag-overlay {
+  position: absolute;
+  z-index: 4;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,.12));
+}
+.signature-drag-overlay:active {
+  cursor: grabbing;
+}
+.placement-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  text-align: center;
+  color: #8b9994;
+  font-size: 11px;
+}
+.placement-heading > div {
+  display: grid;
+  gap: 2px;
+}
+.placement-heading > div span {
+  display: block;
+}
+.placement-notice {
+  font-size: 10px;
+}
+.preview-helper {
+  color: var(--muted);
+  line-height: 1.7;
+  display: block;
+  text-align: center;
+}
+.signature-preview-modal {
+  width: min(1040px, 96vw);
+  max-height: 94vh;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0,1fr) auto;
+}
+.preview-pdf-frame {
+  min-height: 64vh;
+  background: #dce3e0;
+  border-radius: 14px;
+  padding: 6px;
+}
+.preview-pdf-frame iframe {
+  width: 100%;
+  height: 64vh;
+  border: 0;
+  border-radius: 10px;
+  background: white;
+}
+.preview-confirm-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding-top: 14px;
+}
+.preview-confirm-bar strong,
+.preview-confirm-bar span {
+  display: block;
+}
+.preview-confirm-bar span {
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 3px;
+}
+@media (max-width: 720px) {
+  .signature-settings {
+    grid-template-columns: 1fr;
+  }
+  .signature-page-surface {
+    width: min(100%, 300px);
+  }
+  .signer-card-head,
+  .preview-confirm-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .signature-preview-modal {
+    width: 100%;
+    max-height: 96vh;
+    padding: 14px;
+  }
+  .preview-pdf-frame,
+  .preview-pdf-frame iframe {
+    min-height: 58vh;
+    height: 58vh;
+  }
+}
 .hash-box {
   background: #f5f8f6;
   border-radius: 11px;
