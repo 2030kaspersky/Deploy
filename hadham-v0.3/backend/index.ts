@@ -1,5 +1,5 @@
 import { db, error, json, requireAuth, router, storage } from '@appdeploy/sdk';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, degrees } from 'pdf-lib';
 import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 
 type Profile = {
@@ -276,17 +276,38 @@ async function stampSignature(
   }
 
   const page = pages[requestedPage - 1];
+  const cropBox = page.getCropBox();
+  const rotationValue = ((page.getRotation().angle % 360) + 360) % 360;
+  const rotation =
+    rotationValue === 90 ||
+    rotationValue === 180 ||
+    rotationValue === 270
+      ? rotationValue
+      : 0;
+
+  const displayWidth =
+    rotation === 90 || rotation === 270
+      ? cropBox.height
+      : cropBox.width;
+  const displayHeight =
+    rotation === 90 || rotation === 270
+      ? cropBox.width
+      : cropBox.height;
+
   const margin = 16;
-  const maxWidth = Math.min(260, page.getWidth() - margin * 2);
+  const maxWidth = Math.min(
+    260,
+    Math.max(70, displayWidth - margin * 2)
+  );
   const requestedWidth = Number(body.width ?? 140);
   if (!Number.isFinite(requestedWidth))
     throw new Error('INVALID_SIZE');
 
   const width = Math.max(70, Math.min(maxWidth, requestedWidth));
   let scaled = png.scale(width / png.width);
-  if (scaled.height > page.getHeight() - margin * 2) {
+  if (scaled.height > displayHeight - margin * 2) {
     const heightScale =
-      (page.getHeight() - margin * 2) / png.height;
+      (displayHeight - margin * 2) / png.height;
     scaled = png.scale(heightScale);
   }
 
@@ -298,22 +319,36 @@ async function stampSignature(
     0,
     Math.min(1, Number(body.yRatio ?? 0.82))
   );
-  const availableX = Math.max(
-    0,
-    page.getWidth() - scaled.width
-  );
-  const availableY = Math.max(
-    0,
-    page.getHeight() - scaled.height
-  );
-  const x = xRatio * availableX;
-  const y = (1 - yRatio) * availableY;
+
+  const availableX = Math.max(0, displayWidth - scaled.width);
+  const availableY = Math.max(0, displayHeight - scaled.height);
+  const visualX = xRatio * availableX;
+  const visualY = (1 - yRatio) * availableY;
+
+  let x = cropBox.x + visualX;
+  let y = cropBox.y + visualY;
+  let imageRotation = degrees(0);
+
+  if (rotation === 90) {
+    x = cropBox.x + cropBox.width - (visualY + scaled.height);
+    y = cropBox.y + visualX + scaled.width;
+    imageRotation = degrees(270);
+  } else if (rotation === 180) {
+    x = cropBox.x + cropBox.width - visualX;
+    y = cropBox.y + cropBox.height - visualY;
+    imageRotation = degrees(180);
+  } else if (rotation === 270) {
+    x = cropBox.x + visualY + scaled.height;
+    y = cropBox.y + cropBox.height - (visualX + scaled.width);
+    imageRotation = degrees(90);
+  }
 
   page.drawImage(png, {
     x,
     y,
     width: scaled.width,
     height: scaled.height,
+    rotate: imageRotation,
   });
 
   const output = await pdf.saveAsBase64({ dataUri: false });
