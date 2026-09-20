@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, auth } from '@appdeploy/client';
 import { SignatureEditor, type SignaturePlacementPayload } from './SignatureEditor';
+import { AcknowledgmentRoster } from './AcknowledgmentRoster';
 import {
   Archive,
   CheckCircle2,
@@ -1246,6 +1247,16 @@ function DocumentView({
                 })}
             </div>
           </Card>
+
+          <AcknowledgmentRoster
+            signers={doc.signers}
+            code={doc.code}
+            title={doc.title}
+            category={doc.category}
+            createdAt={doc.createdAt}
+            organizationName={me.org?.name || ''}
+            isOwner={me.profile!.role === 'owner'}
+          />
 
           {canAct && (
             <Card className="action-card">
