@@ -1028,8 +1028,12 @@ textarea {
   overflow: auto;
 }
 .interactive-signing-panel .signature-editor {
-  max-width: 900px;
+  max-width: 1040px;
   margin: 0 auto;
+}
+.signature-page-surface.direct-pdf-stage {
+  width: min(100%, 920px);
+  max-width: 920px;
 }
 .signature-editor-top {
   background: white;
@@ -1181,22 +1185,27 @@ textarea {
   display: block;
   text-align: center;
 }
-.signature-preview-modal {
-  width: min(1040px, 96vw);
+.modal.signature-preview-modal {
+  width: min(1500px, 97vw);
+  height: 94vh;
   max-height: 94vh;
   overflow: hidden;
   display: grid;
   grid-template-rows: auto minmax(0,1fr) auto;
+  padding: 18px;
 }
 .preview-pdf-frame {
-  min-height: 64vh;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
   background: #dce3e0;
   border-radius: 14px;
   padding: 6px;
 }
 .preview-pdf-frame iframe {
   width: 100%;
-  height: 64vh;
+  height: 100%;
+  min-height: 0;
   border: 0;
   border-radius: 10px;
   background: white;
@@ -1233,20 +1242,25 @@ textarea {
   .signature-page-surface {
     width: min(100%, 300px);
   }
+  .signature-page-surface.direct-pdf-stage {
+    width: 100%;
+    max-width: 100%;
+  }
   .signer-card-head,
   .preview-confirm-bar {
     align-items: stretch;
     flex-direction: column;
   }
-  .signature-preview-modal {
-    width: 100%;
+  .modal.signature-preview-modal {
+    width: 98vw;
+    height: 96vh;
     max-height: 96vh;
-    padding: 14px;
+    padding: 10px;
   }
   .preview-pdf-frame,
   .preview-pdf-frame iframe {
-    min-height: 58vh;
-    height: 58vh;
+    min-height: 0;
+    height: 100%;
   }
 }
 
