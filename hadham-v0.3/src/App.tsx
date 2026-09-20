@@ -1344,7 +1344,10 @@ function DocumentView({
               </button>
             </div>
             <div className="preview-pdf-frame">
-              <iframe title="معاينة التوقيع" src={previewUrl} />
+              <iframe
+                title="معاينة التوقيع"
+                src={`${previewUrl}#view=Fit`}
+              />
             </div>
             <div className="preview-confirm-bar">
               <div>
