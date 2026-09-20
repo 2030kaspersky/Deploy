@@ -54,6 +54,59 @@ const decodeBase64 = (value: string) => {
   return bytes;
 };
 
+const trimSignatureCanvas = (canvas: HTMLCanvasElement) => {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return {
+      dataUrl: canvas.toDataURL('image/png'),
+      aspect: canvas.width / Math.max(1, canvas.height),
+    };
+  }
+
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  let minX = canvas.width;
+  let minY = canvas.height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      const alpha = image.data[(y * canvas.width + x) * 4 + 3];
+      if (alpha <= 8) continue;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    return {
+      dataUrl: '',
+      aspect: canvas.width / Math.max(1, canvas.height),
+    };
+  }
+
+  const padding = 14;
+  const sx = Math.max(0, minX - padding);
+  const sy = Math.max(0, minY - padding);
+  const ex = Math.min(canvas.width - 1, maxX + padding);
+  const ey = Math.min(canvas.height - 1, maxY + padding);
+  const sw = Math.max(1, ex - sx + 1);
+  const sh = Math.max(1, ey - sy + 1);
+
+  const trimmed = document.createElement('canvas');
+  trimmed.width = sw;
+  trimmed.height = sh;
+  const trimmedCtx = trimmed.getContext('2d');
+  trimmedCtx?.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+
+  return {
+    dataUrl: trimmed.toDataURL('image/png'),
+    aspect: sw / Math.max(1, sh),
+  };
+};
+
 export function SignatureEditor({
   pdfBase64,
   pageCount,
@@ -79,6 +132,11 @@ export function SignatureEditor({
   const [width, setWidth] = useState(140);
   const [hasInk, setHasInk] = useState(false);
   const [signatureDataUrl, setSignatureDataUrl] = useState('');
+  const [signatureAspect, setSignatureAspect] = useState(900 / 260);
+  const [visualPageSize, setVisualPageSize] = useState<PageSize>({
+    width: 595,
+    height: 842,
+  });
   const [xRatio, setXRatio] = useState(0.72);
   const [yRatio, setYRatio] = useState(0.82);
   const [notice, setNotice] = useState('');
@@ -147,6 +205,10 @@ export function SignatureEditor({
         const page = await pdfDoc.getPage(pageNumber);
         if (cancelled) return;
         const baseViewport = page.getViewport({ scale: 1 });
+        setVisualPageSize({
+          width: baseViewport.width,
+          height: baseViewport.height,
+        });
         const availableWidth = Math.max(
           280,
           Math.min(880, surface.clientWidth || 720)
@@ -212,11 +274,13 @@ export function SignatureEditor({
   const updateSignatureFromCanvas = (nextSource: 'draw' | 'image') => {
     const canvas = drawingCanvasRef.current;
     if (!canvas) return;
-    const dataUrl = canvas.toDataURL('image/png');
-    setSignatureDataUrl(dataUrl);
+    const trimmed = trimSignatureCanvas(canvas);
+    if (!trimmed.dataUrl) return;
+    setSignatureDataUrl(trimmed.dataUrl);
+    setSignatureAspect(trimmed.aspect);
     setHasInk(true);
     setSource(nextSource);
-    publish(dataUrl, { source: nextSource });
+    publish(trimmed.dataUrl, { source: nextSource });
   };
 
   const point = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -261,6 +325,7 @@ export function SignatureEditor({
     canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
     setHasInk(false);
     setSignatureDataUrl('');
+    setSignatureAspect(900 / 260);
     setNotice('');
     onChange(null);
   };
@@ -281,9 +346,11 @@ export function SignatureEditor({
     ctx.strokeStyle = nextColor;
     setColor(nextColor);
     if (hasInk) {
-      const dataUrl = canvas.toDataURL('image/png');
-      setSignatureDataUrl(dataUrl);
-      publish(dataUrl, { color: nextColor });
+      const trimmed = trimSignatureCanvas(canvas);
+      if (!trimmed.dataUrl) return;
+      setSignatureDataUrl(trimmed.dataUrl);
+      setSignatureAspect(trimmed.aspect);
+      publish(trimmed.dataUrl, { color: nextColor });
     }
   };
 
@@ -350,19 +417,22 @@ export function SignatureEditor({
     reader.readAsDataURL(file);
   };
 
-  const pageSize =
+  const fallbackPageSize =
     pageSizes[pageNumber - 1] ||
     pageSizes[0] || { width: 595, height: 842 };
+  const pageSize =
+    visualPageSize.width > 0 && visualPageSize.height > 0
+      ? visualPageSize
+      : fallbackPageSize;
   const widthPercent = Math.min(
     48,
     Math.max(10, (width / Math.max(1, pageSize.width)) * 100)
   );
-  const signatureAspect = 900 / 260;
   const heightPercent = Math.min(
     35,
     widthPercent *
       (pageSize.width / Math.max(1, pageSize.height)) /
-      signatureAspect
+      Math.max(0.1, signatureAspect)
   );
 
   const startDrag = (event: React.PointerEvent<HTMLDivElement>) => {
