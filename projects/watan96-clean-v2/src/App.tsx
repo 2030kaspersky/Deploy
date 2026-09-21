@@ -1,6 +1,6 @@
 import {useEffect,useMemo,useState} from 'react';
 import {Flag,Menu,X} from 'lucide-react';
-import {Item,loadPublic} from './api';
+import {Item,loadPublic,loadPublicAnalytics,PublicAnalytics,trackAnalytics} from './api';
 import {Home} from './Home';
 import {Submit} from './Submit';
 import {Gallery} from './Gallery';
@@ -14,9 +14,12 @@ export default function App(){
   const [filter,setFilter]=useState('الكل');
   const [search,setSearch]=useState('');
   const [mobileOpen,setMobileOpen]=useState(false);
+  const [publicAnalytics,setPublicAnalytics]=useState<PublicAnalytics>({total_visitors:0,total_pageviews:0,online_now:0});
 
   async function refresh(){setItems(await loadPublic());}
-  useEffect(()=>{refresh().catch(()=>setItems([]));},[]);
+  useEffect(()=>{refresh().catch(()=>setItems([]));loadPublicAnalytics().then(setPublicAnalytics).catch(()=>{});},[]);
+  useEffect(()=>{trackAnalytics('page_view',view);},[view]);
+  useEffect(()=>{const t=setInterval(()=>{trackAnalytics('heartbeat',view);loadPublicAnalytics().then(setPublicAnalytics).catch(()=>{});},45000);return()=>clearInterval(t);},[view]);
 
   const featured=items.filter(x=>x.featured);
   const visible=useMemo(()=>items.filter(x=>(filter==='الكل'||x.category===filter)&&(!search||[x.student_name,x.title,x.grade,x.class_name].join(' ').includes(search))),[items,filter,search]);
@@ -58,9 +61,9 @@ export default function App(){
       </div>}
     </header>
 
-    {view==='home'&&<Home count={items.length} featured={featured.slice(0,4)} go={setView} open={setSelected}/>}
+    {view==='home'&&<Home count={items.length} featured={featured.slice(0,4)} go={setView} open={(i)=>{setSelected(i);trackAnalytics('item_view','home',i.id);}} analytics={publicAnalytics}/>}
     {view==='submit'&&<Submit after={async()=>{await refresh();setView('home');}}/>}
-    {view==='gallery'&&<Gallery items={visible} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} open={setSelected}/>}
+    {view==='gallery'&&<Gallery items={visible} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} open={(i)=>{setSelected(i);trackAnalytics('item_view','gallery',i.id);}}/>}
     {view==='admin'&&<Admin/>}
     {selected&&<Modal item={selected} close={()=>setSelected(null)}/>}
 
