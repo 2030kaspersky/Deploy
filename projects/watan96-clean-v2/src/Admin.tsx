@@ -1,6 +1,6 @@
 import {useState} from 'react';
 import {Activity,BarChart3,CheckCircle2,Clock3,Eye,EyeOff,Music2,Save,Star,Trash2,Upload,Users,XCircle} from 'lucide-react';
-import {adminDelete,adminGetMusic,adminRemoveMusic,adminSaveMusic,adminUploadMusic,AnalyticsSummary,Item,loadAdminAnalytics,MusicConfig,rpc} from './api';
+import {adminDelete,adminGetMusic,adminPreviewUrl,adminRemoveMusic,adminSaveMusic,adminUploadMusic,AnalyticsSummary,Item,loadAdminAnalytics,MusicConfig,rpc} from './api';
 import {Dash,Empty,StatusBadge} from './ui';
 
 export function Admin(){
@@ -13,6 +13,8 @@ export function Admin(){
   const [music,setMusic]=useState<MusicConfig|null>(null);
   const [musicBusy,setMusicBusy]=useState(false);
   const [musicMsg,setMusicMsg]=useState('');
+  const [preview,setPreview]=useState<Item|null>(null);
+  const [previewBusy,setPreviewBusy]=useState<string|null>(null);
 
   async function load(){
     setBusy(true);setMsg('');
@@ -26,6 +28,18 @@ export function Admin(){
     }catch{
       setOpened(false);setItems([]);setAnalytics(null);setMusic(null);setMsg('رمز الإدارة غير صحيح.');
     }finally{setBusy(false);}
+  }
+
+  async function previewItem(item:Item){
+    try{
+      setPreviewBusy(item.id);
+      const url=await adminPreviewUrl(password,item.id);
+      setPreview({...item,file_url:url});
+    }catch{
+      setMsg('تعذر فتح معاينة المشاركة.');
+    }finally{
+      setPreviewBusy(null);
+    }
   }
 
   async function act(id:string,command:'approve'|'reject'|'feature'|'hide'|'show'){
@@ -171,12 +185,51 @@ export function Admin(){
             <td><div className="flex items-center gap-2"><StatusBadge s={i.status}/>{i.hidden&&<span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-600">مخفية</span>}</div></td>
             <td className="max-w-[280px] truncate text-xs">{i.one_drive_path}</td>
             <td><div className="flex gap-2">
-              {i.status==='pending'&&<><button title="اعتماد" onClick={()=>act(i.id,'approve')} className="icon-btn text-green-700"><CheckCircle2 size={18}/></button><button title="رفض" onClick={()=>act(i.id,'reject')} className="icon-btn text-red-700"><XCircle size={18}/></button></>}
+              {i.status==='pending'&&<>
+                <button title="معاينة" onClick={()=>previewItem(i)} disabled={previewBusy===i.id} className="icon-btn text-slate-700">{previewBusy===i.id?<span className="text-[10px] font-black">...</span>:<Eye size={18}/>}</button>
+                <button title="اعتماد" onClick={()=>act(i.id,'approve')} className="icon-btn text-green-700"><CheckCircle2 size={18}/></button>
+                <button title="رفض" onClick={()=>act(i.id,'reject')} className="icon-btn text-red-700"><XCircle size={18}/></button>
+              </>}
               {i.status==='approved'&&<><button title="تمييز" onClick={()=>act(i.id,'feature')} className={`icon-btn ${i.featured?'text-amber-600':''}`}><Star size={18}/></button>{i.hidden?<button title="إظهار المشاركة" onClick={()=>act(i.id,'show')} className="icon-btn text-emerald-700"><Eye size={18}/></button>:<button title="إخفاء المشاركة" onClick={()=>act(i.id,'hide')} className="icon-btn text-slate-700"><EyeOff size={18}/></button>}<button title="حذف نهائي" onClick={async()=>{if(!window.confirm('سيتم حذف المشاركة وملفها من المنصة نهائيًا. هل تريد المتابعة؟'))return;try{await adminDelete(password,i.id);await load();}catch{setMsg('تعذر حذف المشاركة.');}}} className="icon-btn text-red-700"><Trash2 size={18}/></button></>}
             </div></td>
           </tr>)}</tbody>
         </table>
       </div>:<Empty text="لا توجد مشاركات حاليًا."/>}
     </>}
+    {preview&&<div onClick={()=>setPreview(null)} className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm">
+      <div onClick={e=>e.stopPropagation()} className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-[30px] bg-white p-5 shadow-2xl">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs font-black text-[#9a742b]">معاينة قبل الاعتماد</div>
+            <h3 className="text-2xl font-black">{preview.title}</h3>
+            <div className="mt-1 text-sm font-bold text-slate-500">{preview.student_name} · {preview.grade} · الفصل {preview.class_name}</div>
+          </div>
+          <button onClick={()=>setPreview(null)} className="icon-btn"><XCircle/></button>
+        </div>
+
+        <div className="overflow-hidden rounded-3xl bg-[#edf1ed]">
+          {preview.file_url&&preview.mime_type.startsWith('image/')?
+            <img src={preview.file_url} className="max-h-[68vh] w-full object-contain"/>:
+          preview.file_url&&preview.mime_type.startsWith('video/')?
+            <video src={preview.file_url} controls playsInline className="max-h-[68vh] w-full"/>:
+          preview.file_url&&preview.mime_type.startsWith('audio/')?
+            <div className="grid min-h-64 place-items-center p-6"><audio src={preview.file_url} controls className="w-full max-w-xl"/></div>:
+          preview.file_url&&preview.mime_type==='application/pdf'?
+            <iframe src={preview.file_url} className="h-[68vh] w-full bg-white" title="معاينة PDF"/>:
+            <div className="grid min-h-64 place-items-center"><a href={preview.file_url||'#'} target="_blank" className="rounded-xl bg-[#0c6b4b] px-5 py-3 font-black text-white">فتح الملف</a></div>
+          }
+        </div>
+
+        <div className="mt-5 rounded-2xl bg-[#f7f8f5] p-4">
+          <div className="text-sm font-black text-slate-500">نوع المشاركة: {preview.category}</div>
+          <p className="mt-2 font-bold leading-7 text-slate-700">{preview.description||'لا يوجد وصف للمشاركة.'}</p>
+        </div>
+
+        {preview.status==='pending'&&<div className="mt-5 flex flex-wrap justify-end gap-2">
+          <button onClick={async()=>{await act(preview.id,'reject');setPreview(null);}} className="rounded-xl bg-red-50 px-5 py-3 font-black text-red-700">رفض المشاركة</button>
+          <button onClick={async()=>{await act(preview.id,'approve');setPreview(null);}} className="rounded-xl bg-[#0c6b4b] px-5 py-3 font-black text-white">اعتماد المشاركة</button>
+        </div>}
+      </div>
+    </div>}
   </section>
 }
