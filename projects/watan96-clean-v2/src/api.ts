@@ -37,3 +37,79 @@ export async function adminDelete(password:string,id:string){
   if(!r.ok)throw new Error(text||'delete_failed');
   return text?JSON.parse(text):null;
 }
+
+
+export type PublicAnalytics={total_visitors:number;total_pageviews:number;online_now:number};
+export type AnalyticsSummary={
+  total_visitors:number;
+  total_pageviews:number;
+  online_now:number;
+  today_visitors:number;
+  week_visitors:number;
+  month_visitors:number;
+  avg_minutes:number;
+  daily:{date:string;views:number;visitors:number}[];
+  devices:{name:string;count:number}[];
+  pages:{name:string;count:number}[];
+  top_items:{id:string;title:string;student_name:string;views:number}[];
+  sources:{name:string;count:number}[];
+};
+
+function ensureId(key:string,session=false){
+  const store=session?sessionStorage:localStorage;
+  let v=store.getItem(key);
+  if(!v){
+    v=(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));
+    store.setItem(key,v);
+  }
+  return v;
+}
+
+function clientInfo(){
+  const ua=navigator.userAgent||'';
+  const deviceType=/Mobi|Android|iPhone|iPad/i.test(ua)?(/iPad|Tablet/i.test(ua)?'جهاز لوحي':'جوال'):'كمبيوتر';
+  const browser=/Edg/i.test(ua)?'Edge':/Firefox/i.test(ua)?'Firefox':/Chrome/i.test(ua)?'Chrome':/Safari/i.test(ua)?'Safari':'أخرى';
+  const os=/Windows/i.test(ua)?'Windows':/Android/i.test(ua)?'Android':/iPhone|iPad|iOS/i.test(ua)?'iOS':/Mac OS/i.test(ua)?'macOS':'أخرى';
+  let referrerDomain='';
+  try{referrerDomain=document.referrer?new URL(document.referrer).hostname:'';}catch{}
+  return {deviceType,browser,os,referrerDomain};
+}
+
+export async function trackAnalytics(eventType:'page_view'|'item_view'|'heartbeat',page?:string,itemId?:string){
+  const info=clientInfo();
+  const payload={
+    action:'track',
+    visitorId:ensureId('watan96v2-visitor'),
+    sessionId:ensureId('watan96v2-session',true),
+    eventType,
+    page:page||null,
+    itemId:itemId||null,
+    ...info
+  };
+  try{
+    await fetch(`${SB}/functions/v1/watan96v2-analytics`,{
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify(payload),
+      keepalive:true
+    });
+  }catch{}
+}
+
+export async function loadPublicAnalytics():Promise<PublicAnalytics>{
+  const r=await fetch(`${SB}/functions/v1/watan96v2-analytics`);
+  if(!r.ok)throw new Error('analytics_failed');
+  return r.json();
+}
+
+export async function loadAdminAnalytics(password:string):Promise<AnalyticsSummary>{
+  const r=await fetch(`${SB}/functions/v1/watan96v2-analytics`,{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({action:'admin_summary',password})
+  });
+  const text=await r.text();
+  if(!r.ok)throw new Error(text||'analytics_failed');
+  const data=JSON.parse(text);
+  return data.summary as AnalyticsSummary;
+}
