@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useState} from 'react';
-import {Flag} from 'lucide-react';
+import {Flag,Menu,X} from 'lucide-react';
 import {Item,loadPublic} from './api';
 import {Home} from './Home';
 import {Submit} from './Submit';
@@ -13,6 +13,7 @@ export default function App(){
   const [selected,setSelected]=useState<Item|null>(null);
   const [filter,setFilter]=useState('الكل');
   const [search,setSearch]=useState('');
+  const [mobileOpen,setMobileOpen]=useState(false);
 
   async function refresh(){setItems(await loadPublic());}
   useEffect(()=>{refresh().catch(()=>setItems([]));},[]);
@@ -30,8 +31,31 @@ export default function App(){
         <nav className="hidden gap-1 md:flex">
           {([['home','الرئيسية'],['gallery','معرض الإبداع'],['submit','شارك بإبداعك'],['admin','الإدارة']] as const).map(([k,l])=><button key={k} onClick={()=>setView(k)} className={`rounded-xl px-4 py-2 text-sm font-black ${view===k?'bg-[#0c6b4b] text-white':'hover:bg-white'}`}>{l}</button>)}
         </nav>
-        <button onClick={()=>setView('submit')} className="rounded-xl bg-[#0c6b4b] px-4 py-2.5 text-sm font-black text-white">رفع مشاركة</button>
+        <div className="flex items-center gap-2">
+          <button onClick={()=>setView('submit')} className="rounded-xl bg-[#0c6b4b] px-3 py-2.5 text-xs font-black text-white sm:px-4 sm:text-sm">رفع مشاركة</button>
+          <button
+            onClick={()=>setMobileOpen(v=>!v)}
+            className="grid h-10 w-10 place-items-center rounded-xl bg-white text-[#12392d] shadow-sm md:hidden"
+            aria-label="فتح القائمة"
+          >
+            {mobileOpen?<X size={21}/>:<Menu size={21}/>}
+          </button>
+        </div>
       </div>
+
+      {mobileOpen&&<div className="border-t border-white/70 bg-[#f4f1e8] px-4 pb-4 pt-3 md:hidden">
+        <div className="mx-auto grid max-w-7xl grid-cols-2 gap-2">
+          {([['home','الرئيسية'],['gallery','معرض الإبداع'],['submit','شارك بإبداعك'],['admin','الإدارة']] as const).map(([k,l])=>
+            <button
+              key={k}
+              onClick={()=>{setView(k);setMobileOpen(false);}}
+              className={`rounded-xl px-3 py-3 text-sm font-black ${view===k?'bg-[#0c6b4b] text-white':'bg-white text-[#12392d]'}`}
+            >
+              {l}
+            </button>
+          )}
+        </div>
+      </div>}
     </header>
 
     {view==='home'&&<Home count={items.length} featured={featured.slice(0,4)} go={setView} open={setSelected}/>}
