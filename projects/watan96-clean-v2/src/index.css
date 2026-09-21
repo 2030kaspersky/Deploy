@@ -1,7 +1,7 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
 
 :root{font-family:'Cairo',system-ui,sans-serif;background:#f4f1e8}
 *{box-sizing:border-box}
