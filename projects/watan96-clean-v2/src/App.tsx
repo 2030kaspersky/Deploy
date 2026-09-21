@@ -19,6 +19,7 @@ export default function App(){
   const [musicPlaying,setMusicPlaying]=useState(false);
   const [musicBlocked,setMusicBlocked]=useState(false);
   const audioRef=useRef<HTMLAudioElement|null>(null);
+  const resumeAfterMediaRef=useRef(false);
 
   async function refresh(){setItems(await loadPublic());}
 
@@ -80,6 +81,28 @@ export default function App(){
     return()=>window.removeEventListener('pointerdown',resume);
   },[musicBlocked]);
 
+  function pauseBackgroundForMedia(){
+    const a=audioRef.current;
+    if(!a)return;
+    resumeAfterMediaRef.current=!a.paused;
+    if(!a.paused){
+      a.pause();
+      setMusicPlaying(false);
+    }
+  }
+
+  function resumeBackgroundAfterMedia(){
+    const a=audioRef.current;
+    if(!a||!music?.enabled||!music.has_file)return;
+    if(resumeAfterMediaRef.current){
+      resumeAfterMediaRef.current=false;
+      a.play().then(()=>{
+        setMusicPlaying(true);
+        setMusicBlocked(false);
+      }).catch(()=>setMusicBlocked(true));
+    }
+  }
+
   function toggleMusic(){
     const a=audioRef.current;
     if(!a)return;
@@ -106,6 +129,7 @@ export default function App(){
       ref={audioRef}
       src={music.stream_url}
       loop={music.loop}
+      muted={false}
       preload="auto"
       onPlay={()=>setMusicPlaying(true)}
       onPause={()=>setMusicPlaying(false)}
@@ -161,7 +185,7 @@ export default function App(){
     {view==='submit'&&<Submit after={async()=>{await refresh();setView('home');}}/>}
     {view==='gallery'&&<Gallery items={visible} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} open={(i)=>{setSelected(i);trackAnalytics('item_view','gallery',i.id);}}/>}
     {view==='admin'&&<Admin/>}
-    {selected&&<Modal item={selected} close={()=>setSelected(null)}/>}
+    {selected&&<Modal item={selected} close={()=>setSelected(null)} onMediaStart={pauseBackgroundForMedia} onMediaStop={resumeBackgroundAfterMedia}/>}
 
     <footer className="mt-14 bg-[#113b2f] text-white">
       <div className="mx-auto grid max-w-7xl gap-4 px-4 py-8 md:grid-cols-2">
