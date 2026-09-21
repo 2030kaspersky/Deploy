@@ -196,3 +196,16 @@ export async function adminRemoveMusic(password:string){
   if(!r.ok)throw new Error(text||'music_remove_failed');
   return text?JSON.parse(text):null;
 }
+
+
+export async function adminPreviewUrl(password:string,id:string):Promise<string>{
+  const r=await fetch(`${SB}/functions/v1/watan96v2-admin-preview`,{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({password,id})
+  });
+  const text=await r.text();
+  if(!r.ok)throw new Error(text||'preview_failed');
+  const data=JSON.parse(text);
+  return data.url as string;
+}
