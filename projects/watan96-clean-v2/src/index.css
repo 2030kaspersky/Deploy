@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
+
+:root{font-family:'Cairo',system-ui,sans-serif;background:#f4f1e8}
+*{box-sizing:border-box}
+body{margin:0;min-width:320px}
+button,input,select,textarea{font:inherit}
+button{cursor:pointer}
+.hero{background:radial-gradient(circle at 12% 20%,rgba(213,177,91,.26),transparent 30%),radial-gradient(circle at 86% 14%,rgba(12,107,75,.15),transparent 26%),linear-gradient(180deg,#f8f4e8,#f4f1e8)}
+.pattern{background-image:linear-gradient(30deg,rgba(255,255,255,.22) 12%,transparent 12.5%,transparent 87%,rgba(255,255,255,.22) 87.5%),linear-gradient(150deg,rgba(255,255,255,.22) 12%,transparent 12.5%,transparent 87%,rgba(255,255,255,.22) 87.5%);background-size:56px 96px}
+.eyebrow{margin-bottom:.4rem;font-size:.75rem;font-weight:900;letter-spacing:.08em;color:#9a742b}
+.field input,.field select,.field textarea{width:100%;border:1px solid #dde5df;background:#f8faf8;border-radius:16px;padding:.86rem 1rem;font-weight:700;outline:none}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:#0c6b4b;box-shadow:0 0 0 3px rgba(12,107,75,.08)}
+th,td{padding:1rem 1.1rem}
+.icon-btn{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#f4f6f3}
