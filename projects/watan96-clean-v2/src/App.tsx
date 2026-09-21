@@ -1,6 +1,6 @@
-import {useEffect,useMemo,useState} from 'react';
-import {Flag,Menu,X} from 'lucide-react';
-import {Item,loadPublic,loadPublicAnalytics,PublicAnalytics,trackAnalytics} from './api';
+import {useEffect,useMemo,useRef,useState} from 'react';
+import {Flag,Menu,Music2,Volume2,VolumeX,X} from 'lucide-react';
+import {Item,loadMusicConfig,loadPublic,loadPublicAnalytics,MusicConfig,PublicAnalytics,trackAnalytics} from './api';
 import {Home} from './Home';
 import {Submit} from './Submit';
 import {Gallery} from './Gallery';
@@ -15,16 +15,112 @@ export default function App(){
   const [search,setSearch]=useState('');
   const [mobileOpen,setMobileOpen]=useState(false);
   const [publicAnalytics,setPublicAnalytics]=useState<PublicAnalytics>({total_visitors:0,total_pageviews:0,online_now:0});
+  const [music,setMusic]=useState<MusicConfig|null>(null);
+  const [musicPlaying,setMusicPlaying]=useState(false);
+  const [musicBlocked,setMusicBlocked]=useState(false);
+  const audioRef=useRef<HTMLAudioElement|null>(null);
 
   async function refresh(){setItems(await loadPublic());}
-  useEffect(()=>{refresh().catch(()=>setItems([]));loadPublicAnalytics().then(setPublicAnalytics).catch(()=>{});},[]);
+
+  useEffect(()=>{
+    refresh().catch(()=>setItems([]));
+    loadPublicAnalytics().then(setPublicAnalytics).catch(()=>{});
+    loadMusicConfig().then(setMusic).catch(()=>setMusic(null));
+  },[]);
+
   useEffect(()=>{trackAnalytics('page_view',view);},[view]);
-  useEffect(()=>{const t=setInterval(()=>{trackAnalytics('heartbeat',view);loadPublicAnalytics().then(setPublicAnalytics).catch(()=>{});},45000);return()=>clearInterval(t);},[view]);
+
+  useEffect(()=>{
+    const t=setInterval(()=>{
+      trackAnalytics('heartbeat',view);
+      loadPublicAnalytics().then(setPublicAnalytics).catch(()=>{});
+    },45000);
+    return()=>clearInterval(t);
+  },[view]);
+
+  useEffect(()=>{
+    const a=audioRef.current;
+    if(!a||!music)return;
+    a.volume=Math.max(0,Math.min(1,music.volume||0));
+    a.loop=!!music.loop;
+
+    if(!music.enabled||!music.has_file){
+      a.pause();
+      setMusicPlaying(false);
+      return;
+    }
+
+    if(music.autoplay){
+      const p=a.play();
+      if(p&&typeof p.then==='function'){
+        p.then(()=>{
+          setMusicPlaying(true);
+          setMusicBlocked(false);
+        }).catch(()=>{
+          setMusicPlaying(false);
+          setMusicBlocked(true);
+        });
+      }
+    }
+  },[music]);
+
+  useEffect(()=>{
+    if(!musicBlocked)return;
+
+    const resume=()=>{
+      const a=audioRef.current;
+      if(!a)return;
+      a.play().then(()=>{
+        setMusicPlaying(true);
+        setMusicBlocked(false);
+      }).catch(()=>{});
+    };
+
+    window.addEventListener('pointerdown',resume,{once:true});
+    return()=>window.removeEventListener('pointerdown',resume);
+  },[musicBlocked]);
+
+  function toggleMusic(){
+    const a=audioRef.current;
+    if(!a)return;
+
+    if(a.paused){
+      a.play().then(()=>{
+        setMusicPlaying(true);
+        setMusicBlocked(false);
+      }).catch(()=>setMusicBlocked(true));
+    }else{
+      a.pause();
+      setMusicPlaying(false);
+    }
+  }
 
   const featured=items.filter(x=>x.featured);
-  const visible=useMemo(()=>items.filter(x=>(filter==='الكل'||x.category===filter)&&(!search||[x.student_name,x.title,x.grade,x.class_name].join(' ').includes(search))),[items,filter,search]);
+  const visible=useMemo(
+    ()=>items.filter(x=>(filter==='الكل'||x.category===filter)&&(!search||[x.student_name,x.title,x.grade,x.class_name].join(' ').includes(search))),
+    [items,filter,search]
+  );
 
   return <div dir="rtl" className="min-h-screen bg-[#f4f1e8] text-[#12392d]">
+    {music?.enabled&&music.has_file&&music.stream_url&&<audio
+      ref={audioRef}
+      src={music.stream_url}
+      loop={music.loop}
+      preload="auto"
+      onPlay={()=>setMusicPlaying(true)}
+      onPause={()=>setMusicPlaying(false)}
+    />}
+
+    {music?.enabled&&music.has_file&&<button
+      onClick={toggleMusic}
+      title={musicPlaying?'إيقاف الخلفية الموسيقية':'تشغيل الخلفية الموسيقية'}
+      className="fixed bottom-5 left-5 z-40 flex items-center gap-2 rounded-full bg-[#113b2f] px-4 py-3 text-sm font-black text-white shadow-2xl"
+    >
+      {musicPlaying?<Volume2 size={18}/>:<VolumeX size={18}/>}
+      <span className="hidden sm:inline">{musicPlaying?'الموسيقى تعمل':'تشغيل الموسيقى'}</span>
+      <Music2 size={16} className="text-[#e5c875]"/>
+    </button>}
+
     <header className="sticky top-0 z-30 border-b border-white/60 bg-[#f4f1e8]/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
         <button onClick={()=>setView('home')} className="flex items-center gap-3 text-right">
