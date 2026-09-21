@@ -12,18 +12,11 @@ export function headers(extra:Record<string,string>={}){return {apikey:KEY,Autho
 export function ep(p:string){return p.split('/').map(encodeURIComponent).join('/');}
 export function safe(s:string){return String(s||'').replace(/[\\/:*?"<>|]+/g,'-').trim().slice(0,90);}
 
-export async function sign(path:string){
-  const r=await fetch(`${SB}/storage/v1/object/sign/${BUCKET}/${ep(path)}`,{method:'POST',headers:headers({'content-type':'application/json'}),body:JSON.stringify({expiresIn:3600})});
-  if(!r.ok)return null;
-  const d=await r.json();const rel=d.signedURL||d.signedUrl||d.signed_url;
-  return rel?(String(rel).startsWith('http')?rel:SB+'/storage/v1'+rel):null;
-}
-
 export async function loadPublic():Promise<Item[]>{
   const r=await fetch(`${SB}/rest/v1/watan96v2_submissions?select=*&status=eq.approved&order=created_at.desc&limit=200`,{headers:headers()});
   if(!r.ok)throw new Error('تعذر تحميل المعرض');
   const rows=await r.json();
-  return await Promise.all(rows.map(async(x:Item)=>({...x,file_url:await sign(x.storage_path)})));
+  return rows.map((x:Item)=>({...x,file_url:`${SB}/functions/v1/watan96v2-file?id=${encodeURIComponent(x.id)}`}));
 }
 
 export async function rpc(name:string,payload:Record<string,unknown>){
