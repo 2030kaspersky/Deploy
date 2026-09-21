@@ -1,6 +1,6 @@
 import {useState} from 'react';
-import {Activity,BarChart3,CheckCircle2,Clock3,Eye,EyeOff,Star,Trash2,Users,XCircle} from 'lucide-react';
-import {adminDelete,AnalyticsSummary,Item,loadAdminAnalytics,rpc} from './api';
+import {Activity,BarChart3,CheckCircle2,Clock3,Eye,EyeOff,Music2,Save,Star,Trash2,Upload,Users,XCircle} from 'lucide-react';
+import {adminDelete,adminGetMusic,adminRemoveMusic,adminSaveMusic,adminUploadMusic,AnalyticsSummary,Item,loadAdminAnalytics,MusicConfig,rpc} from './api';
 import {Dash,Empty,StatusBadge} from './ui';
 
 export function Admin(){
@@ -10,6 +10,9 @@ export function Admin(){
   const [busy,setBusy]=useState(false);
   const [opened,setOpened]=useState(false);
   const [analytics,setAnalytics]=useState<AnalyticsSummary|null>(null);
+  const [music,setMusic]=useState<MusicConfig|null>(null);
+  const [musicBusy,setMusicBusy]=useState(false);
+  const [musicMsg,setMusicMsg]=useState('');
 
   async function load(){
     setBusy(true);setMsg('');
@@ -18,9 +21,10 @@ export function Admin(){
       sessionStorage.setItem('watan96v2-admin',password);
       setItems(data||[]);setOpened(true);
       loadAdminAnalytics(password).then(setAnalytics).catch(()=>setAnalytics(null));
+      adminGetMusic(password).then(setMusic).catch(()=>setMusic(null));
       setMsg((data||[]).length?'تم فتح الإدارة بنجاح.':'تم فتح الإدارة بنجاح — لا توجد مشاركات حاليًا.');
     }catch{
-      setOpened(false);setItems([]);setAnalytics(null);setMsg('رمز الإدارة غير صحيح.');
+      setOpened(false);setItems([]);setAnalytics(null);setMusic(null);setMsg('رمز الإدارة غير صحيح.');
     }finally{setBusy(false);}
   }
 
@@ -45,6 +49,74 @@ export function Admin(){
 
     {opened&&<>
       <div className="mb-6 grid gap-4 md:grid-cols-5"><Dash n={items.length} t="كل المشاركات"/><Dash n={pending.length} t="بانتظار الاعتماد"/><Dash n={approved.length} t="معتمدة"/><Dash n={hidden.length} t="مخفية"/><Dash n={approved.filter(x=>x.featured).length} t="مميزة"/></div>
+
+      <div className="mb-8 rounded-3xl bg-white p-5 shadow-sm">
+        <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-center">
+          <div>
+            <div className="eyebrow">الخلفية الموسيقية</div>
+            <h2 className="flex items-center gap-2 text-2xl font-black"><Music2 size={22}/> إدارة موسيقى المعرض</h2>
+            <p className="mt-1 text-sm font-bold text-slate-500">يمكن رفع ملف صوتي وتفعيل التشغيل التلقائي والتحكم في مستوى الصوت والتكرار.</p>
+          </div>
+          {music?.file_name&&<div className="rounded-2xl bg-[#f5f6f2] px-4 py-3 text-xs font-bold text-slate-600">الملف الحالي: {music.file_name}</div>}
+        </div>
+
+        {music&&<div className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
+          <div className="space-y-4">
+            <label className="block"><span className="mb-2 block text-sm font-black">عنوان الخلفية</span><input value={music.title} onChange={e=>setMusic({...music,title:e.target.value})} className="w-full rounded-2xl border bg-[#f8faf8] px-4 py-3 font-bold outline-none"/></label>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="flex items-center justify-between gap-3 rounded-2xl bg-[#f6f7f4] p-4"><span className="font-black">مفعلة</span><input type="checkbox" checked={music.enabled} onChange={e=>setMusic({...music,enabled:e.target.checked})} className="h-5 w-5"/></label>
+              <label className="flex items-center justify-between gap-3 rounded-2xl bg-[#f6f7f4] p-4"><span className="font-black">تشغيل تلقائي</span><input type="checkbox" checked={music.autoplay} onChange={e=>setMusic({...music,autoplay:e.target.checked})} className="h-5 w-5"/></label>
+              <label className="flex items-center justify-between gap-3 rounded-2xl bg-[#f6f7f4] p-4"><span className="font-black">تكرار مستمر</span><input type="checkbox" checked={music.loop} onChange={e=>setMusic({...music,loop:e.target.checked})} className="h-5 w-5"/></label>
+            </div>
+
+            <label className="block">
+              <div className="mb-2 flex justify-between text-sm font-black"><span>مستوى الصوت</span><span>{Math.round(music.volume*100)}%</span></div>
+              <input type="range" min="0" max="1" step="0.05" value={music.volume} onChange={e=>setMusic({...music,volume:Number(e.target.value)})} className="w-full"/>
+            </label>
+
+            <div className="flex flex-wrap gap-2">
+              <button disabled={musicBusy} onClick={async()=>{
+                try{
+                  setMusicBusy(true);setMusicMsg('');
+                  await adminSaveMusic(password,{enabled:music.enabled,autoplay:music.autoplay,loop:music.loop,volume:music.volume,title:music.title});
+                  setMusicMsg('تم حفظ إعدادات الموسيقى بنجاح.');
+                }catch{setMusicMsg('تعذر حفظ إعدادات الموسيقى.');}
+                finally{setMusicBusy(false);}
+              }} className="flex items-center gap-2 rounded-xl bg-[#0c6b4b] px-4 py-3 text-sm font-black text-white"><Save size={17}/> حفظ الإعدادات</button>
+
+              {music.has_file&&<button disabled={musicBusy} onClick={async()=>{
+                if(!window.confirm('سيتم حذف ملف الخلفية الموسيقية الحالي. هل تريد المتابعة؟'))return;
+                try{
+                  setMusicBusy(true);setMusicMsg('');
+                  await adminRemoveMusic(password);
+                  const m=await adminGetMusic(password);setMusic(m);
+                  setMusicMsg('تم حذف الخلفية الموسيقية.');
+                }catch{setMusicMsg('تعذر حذف الخلفية الموسيقية.');}
+                finally{setMusicBusy(false);}
+              }} className="flex items-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm font-black text-red-700"><Trash2 size={17}/> حذف الملف</button>}
+            </div>
+
+            {musicMsg&&<div className="rounded-xl bg-[#f6f7f4] p-3 text-sm font-black text-slate-700">{musicMsg}</div>}
+          </div>
+
+          <div className="rounded-3xl border border-dashed border-[#0c6b4b]/30 bg-[#f8faf8] p-5">
+            <div className="mb-3 flex items-center gap-2 font-black"><Upload size={19}/> رفع ملف موسيقي</div>
+            <p className="mb-4 text-xs font-bold leading-6 text-slate-500">الصيغ المدعومة: MP3 وM4A وWAV وOGG وAAC، وبحجم أقصى 15 MB.</p>
+            <input type="file" accept="audio/mpeg,audio/mp4,audio/wav,audio/x-wav,audio/ogg,audio/aac,.mp3,.m4a,.wav,.ogg,.aac" onChange={async e=>{
+              const file=e.target.files?.[0];if(!file)return;
+              try{
+                setMusicBusy(true);setMusicMsg('جارٍ رفع الملف...');
+                await adminUploadMusic(password,file);
+                const m=await adminGetMusic(password);setMusic(m);
+                setMusicMsg('تم رفع الملف الموسيقي بنجاح.');
+              }catch{setMusicMsg('تعذر رفع الملف الموسيقي. تأكد من الصيغة والحجم.');}
+              finally{setMusicBusy(false);e.currentTarget.value='';}
+            }} className="block w-full rounded-2xl border bg-white p-3 text-sm font-bold"/>
+            {music.has_file&&<div className="mt-4 rounded-2xl bg-green-50 p-3 text-sm font-black text-green-800">يوجد ملف موسيقي جاهز للتشغيل.</div>}
+          </div>
+        </div>}
+      </div>
 
       {analytics&&<section className="mb-8 space-y-5">
         <div className="flex items-end justify-between gap-3">
