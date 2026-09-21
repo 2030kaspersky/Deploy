@@ -1,6 +1,6 @@
 import {useState} from 'react';
-import {CheckCircle2,Star,XCircle} from 'lucide-react';
-import {Item,rpc} from './api';
+import {CheckCircle2,Eye,EyeOff,Star,Trash2,XCircle} from 'lucide-react';
+import {adminDelete,Item,rpc} from './api';
 import {Dash,Empty,StatusBadge} from './ui';
 
 export function Admin(){
@@ -22,7 +22,7 @@ export function Admin(){
     }finally{setBusy(false);}
   }
 
-  async function act(id:string,command:'approve'|'reject'|'feature'){
+  async function act(id:string,command:'approve'|'reject'|'feature'|'hide'|'show'){
     try{
       await rpc('watan96v2_admin_action',{p_password:password,p_id:id,p_command:command});
       await load();
@@ -31,6 +31,7 @@ export function Admin(){
 
   const pending=items.filter(x=>x.status==='pending');
   const approved=items.filter(x=>x.status==='approved');
+  const hidden=approved.filter(x=>x.hidden);
 
   return <section className="mx-auto max-w-7xl px-4 py-12">
     <div className="mb-8"><div className="eyebrow">لوحة الإدارة</div><h1 className="text-4xl font-black">مركز إدارة المعرض</h1></div>
@@ -41,18 +42,18 @@ export function Admin(){
     </div>
 
     {opened&&<>
-      <div className="mb-6 grid gap-4 md:grid-cols-4"><Dash n={items.length} t="كل المشاركات"/><Dash n={pending.length} t="بانتظار الاعتماد"/><Dash n={approved.length} t="معتمدة"/><Dash n={approved.filter(x=>x.featured).length} t="مميزة"/></div>
+      <div className="mb-6 grid gap-4 md:grid-cols-5"><Dash n={items.length} t="كل المشاركات"/><Dash n={pending.length} t="بانتظار الاعتماد"/><Dash n={approved.length} t="معتمدة"/><Dash n={hidden.length} t="مخفية"/><Dash n={approved.filter(x=>x.featured).length} t="مميزة"/></div>
       {items.length?<div className="overflow-x-auto rounded-3xl bg-white shadow">
         <table className="w-full min-w-[900px] text-right text-sm">
           <thead className="bg-[#f5f6f2]"><tr><th>الطالب</th><th>المشاركة</th><th>الحالة</th><th>OneDrive</th><th>الإجراءات</th></tr></thead>
           <tbody>{items.map(i=><tr key={i.id} className="border-t">
             <td><b>{i.student_name}</b><div className="text-xs text-slate-500">{i.grade} · الفصل {i.class_name}</div></td>
             <td><b>{i.title}</b><div className="text-xs text-slate-500">{i.category}</div></td>
-            <td><StatusBadge s={i.status}/></td>
+            <td><div className="flex items-center gap-2"><StatusBadge s={i.status}/>{i.hidden&&<span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-600">مخفية</span>}</div></td>
             <td className="max-w-[280px] truncate text-xs">{i.one_drive_path}</td>
             <td><div className="flex gap-2">
               {i.status==='pending'&&<><button title="اعتماد" onClick={()=>act(i.id,'approve')} className="icon-btn text-green-700"><CheckCircle2 size={18}/></button><button title="رفض" onClick={()=>act(i.id,'reject')} className="icon-btn text-red-700"><XCircle size={18}/></button></>}
-              {i.status==='approved'&&<button title="تمييز" onClick={()=>act(i.id,'feature')} className={`icon-btn ${i.featured?'text-amber-600':''}`}><Star size={18}/></button>}
+              {i.status==='approved'&&<><button title="تمييز" onClick={()=>act(i.id,'feature')} className={`icon-btn ${i.featured?'text-amber-600':''}`}><Star size={18}/></button>{i.hidden?<button title="إظهار المشاركة" onClick={()=>act(i.id,'show')} className="icon-btn text-emerald-700"><Eye size={18}/></button>:<button title="إخفاء المشاركة" onClick={()=>act(i.id,'hide')} className="icon-btn text-slate-700"><EyeOff size={18}/></button>}<button title="حذف نهائي" onClick={async()=>{if(!window.confirm('سيتم حذف المشاركة وملفها من المنصة نهائيًا. هل تريد المتابعة؟'))return;try{await adminDelete(password,i.id);await load();}catch{setMsg('تعذر حذف المشاركة.');}}} className="icon-btn text-red-700"><Trash2 size={18}/></button></>}
             </div></td>
           </tr>)}</tbody>
         </table>
