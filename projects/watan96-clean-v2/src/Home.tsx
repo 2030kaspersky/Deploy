@@ -1,8 +1,8 @@
 import {Sparkles} from 'lucide-react';
-import {Item} from './api';
+import {Item,PublicAnalytics} from './api';
 import {Card,Empty,Stat} from './ui';
 
-export function Home({count,featured,go,open}:{count:number;featured:Item[];go:(v:'home'|'submit'|'gallery'|'admin')=>void;open:(i:Item)=>void}){
+export function Home({count,featured,go,open,analytics}:{count:number;featured:Item[];go:(v:'home'|'submit'|'gallery'|'admin')=>void;open:(i:Item)=>void;analytics:PublicAnalytics}){
   return <>
     <section className="hero"><div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 lg:grid-cols-[1.1fr_.9fr] lg:py-20">
       <div>
@@ -10,7 +10,7 @@ export function Home({count,featured,go,open}:{count:number;featured:Item[];go:(
         <h1 className="text-5xl font-black leading-tight md:text-7xl">وطن <span className="text-[#0c6b4b]">نبدع</span> له</h1>
         <p className="mt-5 max-w-2xl text-lg font-bold leading-9 text-[#52675d]">معرض رقمي تفاعلي يحتفي بإبداع طلاب ابتدائية خالد بن الوليد بمناسبة اليوم الوطني السعودي 96.</p>
         <div className="mt-8 flex gap-3"><button onClick={()=>go('submit')} className="rounded-2xl bg-[#0c6b4b] px-7 py-4 font-black text-white">شارك بإبداعك</button><button onClick={()=>go('gallery')} className="rounded-2xl bg-white px-7 py-4 font-black">استكشف المعرض</button></div>
-        <div className="mt-10 grid max-w-xl grid-cols-3 gap-3"><Stat n={count} t="مشاركة معتمدة"/><Stat n={featured.length} t="إبداع مميز"/><Stat n={96} t="اليوم الوطني"/></div>
+        <div className="mt-10 grid max-w-2xl grid-cols-2 gap-3 sm:grid-cols-5"><Stat n={count} t="مشاركة معتمدة"/><Stat n={featured.length} t="إبداع مميز"/><Stat n={analytics.total_visitors} t="زائر للمعرض"/><Stat n={analytics.total_pageviews} t="مشاهدة"/><Stat n={analytics.online_now} t="متواجد الآن"/></div>
       </div>
       <div className="relative min-h-[390px] rounded-[42px] bg-[#0c6b4b] p-8 text-white shadow-2xl">
         <div className="pattern absolute inset-0 opacity-20"/>
