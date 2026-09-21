@@ -113,3 +113,86 @@ export async function loadAdminAnalytics(password:string):Promise<AnalyticsSumma
   const data=JSON.parse(text);
   return data.summary as AnalyticsSummary;
 }
+
+
+export type MusicConfig={
+  enabled:boolean;
+  autoplay:boolean;
+  loop:boolean;
+  volume:number;
+  title:string;
+  has_file:boolean;
+  stream_url:string|null;
+  storage_path?:string|null;
+  file_name?:string|null;
+  mime_type?:string|null;
+};
+
+export async function loadMusicConfig():Promise<MusicConfig>{
+  const r=await fetch(`${SB}/functions/v1/watan96v2-music`);
+  if(!r.ok)throw new Error('music_config_failed');
+  return r.json();
+}
+
+export async function adminGetMusic(password:string):Promise<MusicConfig>{
+  const r=await fetch(`${SB}/functions/v1/watan96v2-music`,{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({action:'admin_get',password})
+  });
+  const text=await r.text();
+  if(!r.ok)throw new Error(text||'music_admin_failed');
+  const data=JSON.parse(text);
+  const c=data.config||{};
+  return {
+    enabled:!!c.enabled,
+    autoplay:!!c.autoplay,
+    loop:!!c.loop,
+    volume:Number(c.volume||0.35),
+    title:c.title||'الخلفية الموسيقية للمعرض',
+    has_file:!!c.storage_path,
+    stream_url:c.enabled&&c.storage_path?`${SB}/functions/v1/watan96v2-music?stream=1`:null,
+    storage_path:c.storage_path||null,
+    file_name:c.file_name||null,
+    mime_type:c.mime_type||null
+  };
+}
+
+export async function adminSaveMusic(password:string,config:{enabled:boolean;autoplay:boolean;loop:boolean;volume:number;title:string}){
+  const r=await fetch(`${SB}/functions/v1/watan96v2-music`,{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({action:'save',password,...config})
+  });
+  const text=await r.text();
+  if(!r.ok)throw new Error(text||'music_save_failed');
+  return text?JSON.parse(text):null;
+}
+
+export async function adminUploadMusic(password:string,file:File){
+  const b64=await new Promise<string>((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onerror=()=>reject(reader.error);
+    reader.onload=()=>resolve(String(reader.result||'').split(',')[1]||'');
+    reader.readAsDataURL(file);
+  });
+  const r=await fetch(`${SB}/functions/v1/watan96v2-music`,{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({action:'upload',password,fileName:file.name,mimeType:file.type||'audio/mpeg',fileContent:b64})
+  });
+  const text=await r.text();
+  if(!r.ok)throw new Error(text||'music_upload_failed');
+  return text?JSON.parse(text):null;
+}
+
+export async function adminRemoveMusic(password:string){
+  const r=await fetch(`${SB}/functions/v1/watan96v2-music`,{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({action:'remove',password})
+  });
+  const text=await r.text();
+  if(!r.ok)throw new Error(text||'music_remove_failed');
+  return text?JSON.parse(text):null;
+}
