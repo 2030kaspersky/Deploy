@@ -1,6 +1,6 @@
 import {useState} from 'react';
 import {ImagePlus} from 'lucide-react';
-import {BUCKET,SB,categories,classes,ep,grades,headers,safe} from './api';
+import {SB,categories,classes,grades} from './api';
 import {Field} from './ui';
 
 export function Submit({after}:{after:()=>void}){
@@ -17,24 +17,34 @@ export function Submit({after}:{after:()=>void}){
     if(file.size>10*1024*1024){setMsg('الحد الأعلى 10MB.');return;}
     setBusy(true);
     try{
-      const fileName=safe(file.name);
-      const storagePath=['incoming',safe(form.grade),'الفصل '+safe(form.className),safe(form.category),crypto.randomUUID()+'-'+fileName].join('/');
-      const up=await fetch(`${SB}/storage/v1/object/${BUCKET}/${ep(storagePath)}`,{
-        method:'POST',
-        headers:headers({'content-type':file.type||'application/octet-stream','x-upsert':'false'}),
-        body:file
+      const fileContent=await new Promise<string>((resolve,reject)=>{
+        const reader=new FileReader();
+        reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');
+        reader.onerror=()=>reject(new Error('تعذر قراءة الملف.'));
+        reader.readAsDataURL(file);
       });
-      if(!up.ok)throw new Error('تعذر رفع الملف إلى التخزين.');
 
-      const oneDrivePath=['معرض اليوم الوطني 96',safe(form.grade),'الفصل '+safe(form.className),safe(form.category),safe(form.studentName)+'-'+fileName].join('/');
-      const row={student_name:form.studentName.trim(),grade:form.grade,class_name:form.className,category:form.category,title:form.title.trim(),description:form.description.trim(),file_name:fileName,mime_type:file.type||'application/octet-stream',storage_path:storagePath,one_drive_path:oneDrivePath,status:'pending',featured:false};
-
-      const ins=await fetch(`${SB}/rest/v1/watan96v2_submissions`,{
+      const r=await fetch(`${SB}/functions/v1/watan96v2-submit`,{
         method:'POST',
-        headers:headers({'content-type':'application/json','prefer':'return=minimal'}),
-        body:JSON.stringify(row)
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({
+          studentName:form.studentName,
+          grade:form.grade,
+          className:form.className,
+          category:form.category,
+          title:form.title,
+          description:form.description,
+          fileName:file.name,
+          mimeType:file.type||'application/octet-stream',
+          fileContent
+        })
       });
-      if(!ins.ok)throw new Error('تم رفع الملف لكن تعذر حفظ بيانات المشاركة.');
+
+      const data=await r.json().catch(()=>({}));
+      if(!r.ok){
+        const detail=data?.detail?(' — '+data.detail):'';
+        throw new Error('تعذر حفظ المشاركة'+detail);
+      }
 
       setOk(true);
       setMsg('تم استلام المشاركة بنجاح، وستظهر في المعرض بعد اعتمادها.');
