@@ -1,0 +1,58 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const {JSDOM} = require('jsdom');
+const html=fs.readFileSync('index.html','utf8');
+const captured=[];
+const dom=new JSDOM(html,{
+  url:'https://example.test/',runScripts:'dangerously',pretendToBeVisual:true,
+  beforeParse(window){
+    window.confirm=()=>true;
+    window.prompt=()=>'سبب اختباري موثق';
+    window.scrollTo=()=>{};
+    window.onerror=(message)=>captured.push(message);
+  }
+});
+const w=dom.window;
+const state=()=>w.eval('data');
+const find=(sid)=>state().requests.find(r=>r.studentId===sid);
+assert.equal(state().students.length,18);
+assert.equal(state().requests.length,4);
+assert.match(w.document.getElementById('homeKpis').textContent,/كل الطلبات/);
+w.document.getElementById('parentCode').value='DEMO-1012';
+w.createParent();
+let r=find('S012');
+assert.ok(r,'Guardian submission creates a fictional pickup request');
+assert.equal(r.onsite,true);
+assert.equal(r.status,'requested');
+w.createParent();
+assert.equal(state().requests.filter(x=>x.studentId==='S012').length,1,'No duplicate active pickup');
+w.setRole('zone');
+w.mutate(r.id,'call');
+assert.equal(find('S012').status,'requested','Calling before onsite confirmation blocked');
+w.setRole('reception');
+w.mutate(r.id,'onsite');
+assert.equal(find('S012').onsite,false);
+w.setRole('zone');
+w.mutate(r.id,'call');
+assert.equal(find('S012').status,'called');
+w.mutate(r.id,'release');
+assert.equal(find('S012').status,'called','Cannot jump to release');
+w.mutate(r.id,'leave');
+assert.equal(find('S012').status,'leaving_zone');
+w.setRole('gate');
+w.mutate(r.id,'atgate');
+assert.equal(find('S012').status,'at_gate');
+w.mutate(r.id,'release');
+assert.equal(find('S012').status,'at_gate','Cannot release without verification');
+w.mutate(r.id,'verify');
+assert.equal(find('S012').verified,true);
+w.mutate(r.id,'release');
+assert.equal(find('S012').status,'released');
+w.mutate(r.id,'release');
+assert.equal(find('S012').status,'released','Final release is immutable');
+assert.ok(state().logs.length>=7,'Actions logged');
+assert.equal(captured.length,0,'No runtime errors');
+assert.match(w.document.querySelector('.banner').textContent,/بيانات وهمية/);
+w.resetDemo();
+assert.equal(state().requests.length,4);
+console.log('PASS: 18 synthetic students, guardian intake, onsite confirmation, roles, state-machine, verification, release, logs, reset, Cairo/RTL banner.');
