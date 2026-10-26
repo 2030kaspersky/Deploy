@@ -1,0 +1,23 @@
+name: Miral Safe Dismissal Demo Tests
+on:
+  push:
+    branches: [miral-safe-dismissal-demo-20261026]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: miral-safe-dismissal-demo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install JSDOM only for tests
+        run: npm install --no-audit --no-fund --no-save jsdom@26
+      - name: Test full fictional handoff
+        run: node demo.test.cjs
