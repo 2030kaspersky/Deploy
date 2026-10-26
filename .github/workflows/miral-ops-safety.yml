@@ -1,0 +1,49 @@
+name: Miral Multi-Device Backend Safety Tests
+on:
+  push:
+    branches: [miral-safe-dismissal-ops-test-20261027]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: miral-ops-test
+  cancel-in-progress: true
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: miral_fictional_test
+          POSTGRES_USER: demo_test
+          POSTGRES_PASSWORD: test_local_ci_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U demo_test -d miral_fictional_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: safe-dismissal-test
+    env:
+      DATABASE_URL: postgresql://demo_test:test_local_ci_only@localhost:5432/miral_fictional_test
+      DEMO_ONLY: '1'
+      PGSSL: 'false'
+      SEED_SECRET: ci-only-secret-for-unit-tests-not-real
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: PostgreSQL role and handoff integration
+        run: npm test
+      - name: Syntax check
+        run: |
+          node --check server.js
+          node --check public/app.js
