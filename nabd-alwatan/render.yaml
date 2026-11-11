@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: nabd-alwatan
+    runtime: node
+    rootDir: nabd-alwatan
+    region: frankfurt
+    plan: starter
+    buildCommand: echo "No external dependencies"
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: false
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: DATA_DIR
+        value: /var/data
+      - key: ADMIN_PASSWORD
+        sync: false
+    disk:
+      name: nabd-persistent-data
+      mountPath: /var/data
+      sizeGB: 1
